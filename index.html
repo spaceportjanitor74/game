@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>The Gauntlet – D&D Flapper</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; background:#0a0010;
+      display:flex; align-items:center; justify-content:center;
+      font-family:'Georgia',serif; touch-action:none; }
+    canvas { display:block; image-rendering:pixelated; }
+  </style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<script>
+(function(){
+'use strict';
+
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+const LW = 480, LH = 640;
+let scale = 1;
+function resize(){
+  scale = Math.min(window.innerWidth/LW, window.innerHeight/LH);
+  canvas.width = LW*scale; canvas.height = LH*scale;
+  ctx.setTransform(scale,0,0,scale,0,0);
+}
+window.addEventListener('resize', resize); resize();
+
+/* ── IMAGE PRELOAD ───────────────────────────────────────────── */
+const IMGS = {};
+let imgsLoaded = 0;
+const IMG_DEFS = [
+  // Biome 0 – Sunlit Forest (CC0, MatiasVME / opengameart.org)
+  ['b0_sky',    'bg/b0_sky.png'],
+  ['b0_clouds', 'bg/b0_clouds.png'],
+  ['b0_mtn1',   'bg/b0_mtn1.png'],
+  ['b0_mtn2',   'bg/b0_mtn2.png'],
+  ['b0_mtn3',   'bg/b0_mtn3.png'],
+  ['b0_rocks',  'bg/b0_rocks.png'],
+  ['b0_trees',  'bg/b0_trees.png'],
+  // Biome 1 – Enchanted Forest (CC-BY 4.0, Admurin / admurin.itch.io)
+  ['b1_0','bg/b1_0.png'],['b1_1','bg/b1_1.png'],['b1_2','bg/b1_2.png'],
+  ['b1_3','bg/b1_3.png'],['b1_4','bg/b1_4.png'],['b1_5','bg/b1_5.png'],['b1_6','bg/b1_6.png'],
+  // Biome 2 – Ancient Dungeon (CC0, opengameart.org)
+  ['b2_back','bg/b2_back.png'],['b2_far','bg/b2_far.png'],
+  ['b2_mid','bg/b2_mid.png'],['b2_front','bg/b2_front.png'],
+  // Biome 3 – Lava Cavern (CC-BY 4.0, Admurin)
+  ['b3_0','bg/b3_0.png'],['b3_1','bg/b3_1.png'],['b3_2','bg/b3_2.png'],
+  ['b3_3','bg/b3_3.png'],['b3_4','bg/b3_4.png'],['b3_5','bg/b3_5.png'],
+  // Biome 4 – Volcanic Hellscape (CC0, Tio Aimar / opengameart.org)
+  ['b4_1','bg/b4_1.png'],['b4_2','bg/b4_2.png'],['b4_3','bg/b4_3.png'],
+  ['b4_4','bg/b4_4.png'],['b4_5','bg/b4_5.png'],['b4_6','bg/b4_6.png'],
+];
+const imgsTotal = IMG_DEFS.length;
+IMG_DEFS.forEach(([key,src])=>{
+  const img = new Image();
+  img.onload  = ()=>{ IMGS[key]=img; imgsLoaded++; };
+  img.onerror = ()=>{ imgsLoaded++; }; // fail gracefully, canvas fallbacks kick in
+  img.src = src;
+});
+
+/* ── TUNING ─────────────────────────────────────────────────── */
+const GRAVITY       = 0.16;
+const JUMP_VEL      = -4.8;
+const HOLD_LIFT     = 0.11;
+const BASE_SPEED    = 1.5;
+const MAX_SPEED     = 3.6;
+const BASE_GAP      = 195;
+const MIN_GAP       = 128;
+const BASE_INTERVAL = 1950;
+const MIN_INTERVAL  = 1100;
+const PIPE_W        = 58;
+const BIRD_R        = 16;
+const FORGIVE       = 8;
+const GROUND_H      = 72;
+const BIRD_X        = 100;
+const ANG_UP        = -22;
+const ANG_DOWN      = 78;
+const PIPE_MIN_H    = 52;
+
+/* ── BIOMES ──────────────────────────────────────────────────── */
+const BIOMES = [
+  { name:'Sunlit Forest',      at:0  },
+  { name:'Enchanted Forest',   at:8  },
+  { name:'Ancient Dungeon',    at:18 },
+  { name:'Lava Cavern',        at:32 },
+  { name:'Volcanic Hellscape', at:50 },
+];
+function biomeOf(s){ let b=0; for(let i=0;i<BIOMES.length;i++) if(s>=BIOMES[i].at) b=i; return b; }
+function pipeSpeed(s){ return BASE_SPEED+(MAX_SPEED-BASE_SPEED)*Math.min(s/60,1); }
+function pipeGap(s)  { return BASE_GAP-(BASE_GAP-MIN_GAP)*Math.min(s/50,1); }
+function pipeInt(s)  { return BASE_INTERVAL-(BASE_INTERVAL-MIN_INTERVAL)*Math.min(s/50,1); }
+
+/* ── STATE ───────────────────────────────────────────────────── */
+const S = {START:0,PLAY:1,DEAD:2};
+let state=S.START, score=0, best=0, biome=0, fadeAlpha=0, curSpeed=BASE_SPEED;
+let worldX = 0;
+
+/* ── BIRD COLORS PER BIOME ───────────────────────────────────── */
+const BC = [
+  {body:'#0ea5e9',hi:'#7dd3fc',dark:'#0369a1',wing:'#0284c7',whi:'#38bdf8',
+   tail:'#22d3ee',thi:'#a5f3fc',beak:'#fbbf24',eye:'#0c4a6e',crest:'#06b6d4',spark:'#7dd3fc'},
+  {body:'#9333ea',hi:'#d8b4fe',dark:'#6b21a8',wing:'#7c3aed',whi:'#c4b5fd',
+   tail:'#e879f9',thi:'#f0abfc',beak:'#a21caf',eye:'#2e1065',crest:'#c026d3',spark:'#e879f9'},
+  {body:'#64748b',hi:'#e2e8f0',dark:'#334155',wing:'#475569',whi:'#94a3b8',
+   tail:'#94a3b8',thi:'#f1f5f9',beak:'#64748b',eye:'#0f172a',crest:'#94a3b8',spark:'#cbd5e1'},
+  {body:'#f97316',hi:'#fed7aa',dark:'#c2410c',wing:'#ea580c',whi:'#fb923c',
+   tail:'#fcd34d',thi:'#fef9c3',beak:'#dc2626',eye:'#431407',crest:'#fbbf24',spark:'#fb923c'},
+  {body:'#dc2626',hi:'#fca5a5',dark:'#991b1b',wing:'#b91c1c',whi:'#f87171',
+   tail:'#fbbf24',thi:'#fef08a',beak:'#fbbf24',eye:'#450a0a',crest:'#ff6600',spark:'#fbbf24'},
+];
+
+/* ── BIRD ────────────────────────────────────────────────────── */
+const bird = {x:BIRD_X,y:LH/2,vy:0,angle:0,wing:0};
+function resetBird(){ Object.assign(bird,{x:BIRD_X,y:LH/2,vy:0,angle:0,wing:0}); }
+function flap(){ bird.vy=JUMP_VEL; bird.wing=0; spawnMagic(); }
+let held=false;
+function updateBird(){
+  bird.vy += GRAVITY;
+  if(held && state===S.PLAY){ bird.vy -= HOLD_LIFT; bird.vy=Math.max(bird.vy,-3.2); }
+  bird.y += bird.vy;
+  const ta=(bird.vy/10)*ANG_DOWN;
+  bird.angle += (Math.max(ANG_UP,Math.min(ANG_DOWN,ta))-bird.angle)*0.18;
+  bird.wing = (bird.wing+0.22)%(Math.PI*2);
+}
+
+/* ── PIPES ───────────────────────────────────────────────────── */
+let pipes=[], lastPipe=0;
+function spawnPipe(now){
+  const gap=pipeGap(score), maxT=LH-GROUND_H-gap-PIPE_MIN_H;
+  const topH=PIPE_MIN_H+Math.random()*(maxT-PIPE_MIN_H);
+  pipes.push({x:LW+PIPE_W, topH, botY:topH+gap, passed:false});
+  lastPipe=now;
+}
+function updatePipes(now){
+  curSpeed=pipeSpeed(score);
+  if(now-lastPipe>pipeInt(score)) spawnPipe(now);
+  for(let i=pipes.length-1;i>=0;i--){
+    const p=pipes[i]; p.x-=curSpeed;
+    if(!p.passed && p.x+PIPE_W<bird.x-BIRD_R){
+      p.passed=true; score++;
+      const nb=biomeOf(score);
+      if(nb!==biome){ biome=nb; fadeAlpha=1.0; }
+    }
+    if(p.x+PIPE_W<-10) pipes.splice(i,1);
+  }
+}
+function resetPipes(){ pipes=[]; lastPipe=0; curSpeed=BASE_SPEED; }
+
+/* ── COLLISION ───────────────────────────────────────────────── */
+function collides(){
+  const r=BIRD_R-FORGIVE;
+  if(bird.y+r>=LH-GROUND_H||bird.y-r<=0) return true;
+  for(const p of pipes)
+    if(bird.x+r>p.x&&bird.x-r<p.x+PIPE_W)
+      if(bird.y-r<p.topH||bird.y+r>p.botY) return true;
+  return false;
+}
+
+/* ── GROUND SCROLL ───────────────────────────────────────────── */
+let gOff=0;
+function updateGround(){ gOff=(gOff+curSpeed)%48; }
+
+/* ── PARTICLES ───────────────────────────────────────────────── */
+let parts=[], magic=[], embers=[];
+let lavaPhase=0, torchPhase=0;
+
+function spawnDeath(){
+  const c=BC[biome], cols=[c.body,c.tail,c.hi,c.thi];
+  for(let i=0;i<24;i++){
+    const a=(Math.PI*2*i)/24+Math.random()*.4, sp=2+Math.random()*5;
+    parts.push({x:bird.x,y:bird.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+      life:1,r:3+Math.random()*5,c:cols[i%4]});
+  }
+}
+function spawnMagic(){
+  const col=BC[biome].spark;
+  for(let i=0;i<7;i++){
+    const a=Math.random()*Math.PI*2,sp=1+Math.random()*2.5;
+    magic.push({x:bird.x-8,y:bird.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+      life:1,r:1.5+Math.random()*2.5,c:col});
+  }
+}
+function updateParts(){
+  lavaPhase+=0.04; torchPhase+=0.09;
+  for(let i=parts.length-1;i>=0;i--){
+    const p=parts[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=0.2; p.life-=0.04;
+    if(p.life<=0) parts.splice(i,1);
+  }
+  for(let i=magic.length-1;i>=0;i--){
+    const p=magic[i]; p.x+=p.vx; p.y+=p.vy; p.vy-=0.06; p.life-=0.07;
+    if(p.life<=0) magic.splice(i,1);
+  }
+  for(let i=embers.length-1;i>=0;i--){
+    const e=embers[i]; e.x+=e.vx; e.y+=e.vy; e.vy-=0.03; e.life-=0.018;
+    if(e.life<=0||e.y<0) embers.splice(i,1);
+  }
+}
+function spawnEmber(heavy){
+  if(Math.random()<(heavy?.55:.22))
+    embers.push({x:Math.random()*LW,y:LH-GROUND_H-2,
+      vx:(Math.random()-.5)*1.4,vy:-(1+Math.random()*2.2),
+      life:1,r:1+Math.random()*2.2,c:Math.random()<.5?'#ff6600':'#ffaa00'});
+}
+
+/* ── ATMOSPHERE ──────────────────────────────────────────────── */
+// Stars/fireflies for biome 1 overlay atmosphere
+const STARS=[];
+for(let i=0;i<60;i++) STARS.push({x:Math.random()*LW,y:Math.random()*LH*.65,
+  r:.3+Math.random()*1.1,t:Math.random()*Math.PI*2,dt:.015+Math.random()*.025});
+const FLIES=[];
+for(let i=0;i<16;i++) FLIES.push({x:Math.random()*LW,
+  y:LH*.2+Math.random()*LH*.55,ph:Math.random()*Math.PI*2,sp:.2+Math.random()*.4});
+
+/* ── ROUNDED RECT ────────────────────────────────────────────── */
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r); ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r); ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+}
+
+/* ── CORE PARALLAX DRAW ──────────────────────────────────────── */
+// Draws a tiling image layer at the given parallax depth.
+// depth 0 = static, 1 = moves at same speed as pipes.
+// scaleH: target height to scale image to (default = full bg area)
+// anchorY: y offset to draw at (default 0)
+function drawBGLayer(img, depth, scaleH, anchorY){
+  if(!img) return;
+  const bgH = LH - GROUND_H;
+  const dstH = scaleH || bgH;
+  const sc   = dstH / img.naturalHeight;
+  const dstW = img.naturalWidth * sc;
+  if(dstW<=0) return;
+  const off = (worldX * depth) % dstW;
+  const y   = anchorY || 0;
+  let x = -off;
+  while(x < LW + 1){
+    ctx.drawImage(img, x, y, dstW, dstH);
+    x += dstW;
+  }
+}
+
+/* ── TORCH HELPER ────────────────────────────────────────────── */
+function drawTorches(col){
+  const fl=.7+.3*Math.sin(torchPhase);
+  const spacing=145, tW=spacing*4, off=(worldX)%tW;
+  for(let i=0;i<5;i++){
+    const tx=((i*spacing-off+tW*2)%tW)-10;
+    if(tx<-20||tx>LW+20) continue;
+    const ty=LH*.24;
+    ctx.fillStyle='#78716c'; ctx.fillRect(tx-3,ty,6,18); ctx.fillRect(tx-6,ty+13,12,4);
+    const gg=ctx.createRadialGradient(tx,ty-4,0,tx,ty-4,22*fl);
+    gg.addColorStop(0,col||'rgba(251,191,36,.55)'); gg.addColorStop(1,'rgba(255,100,0,0)');
+    ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(tx,ty-4,24*fl,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha=fl; ctx.fillStyle=col||'#fbbf24';
+    ctx.beginPath(); ctx.moveTo(tx,ty-18); ctx.quadraticCurveTo(tx+5,ty-9,tx,ty);
+    ctx.quadraticCurveTo(tx-5,ty-9,tx,ty-18); ctx.fill();
+    ctx.globalAlpha=1;
+  }
+}
+
+function drawEmberLayer(){
+  for(const e of embers){
+    ctx.globalAlpha=e.life; ctx.fillStyle=e.c;
+    ctx.beginPath(); ctx.arc(e.x,e.y,e.r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+/* ── BACKGROUNDS ─────────────────────────────────────────────── */
+function drawBG0(){
+  // Sunlit Forest — 7 pixel-art layers, CC0
+  // Sky is static; each subsequent layer scrolls faster (closer = faster)
+  drawBGLayer(IMGS.b0_sky,    0.00);
+  drawBGLayer(IMGS.b0_clouds, 0.10);
+  drawBGLayer(IMGS.b0_mtn1,   0.18);
+  drawBGLayer(IMGS.b0_mtn2,   0.30);
+  drawBGLayer(IMGS.b0_mtn3,   0.44);
+  drawBGLayer(IMGS.b0_rocks,  0.62);
+  drawBGLayer(IMGS.b0_trees,  0.82);
+}
+
+function drawBG1(){
+  // Enchanted/Dead Forest — 7 layers, CC-BY
+  drawBGLayer(IMGS.b1_0, 0.00); // sky
+  drawBGLayer(IMGS.b1_1, 0.07);
+  drawBGLayer(IMGS.b1_2, 0.16);
+  drawBGLayer(IMGS.b1_3, 0.30);
+  drawBGLayer(IMGS.b1_4, 0.48);
+  drawBGLayer(IMGS.b1_5, 0.66);
+  drawBGLayer(IMGS.b1_6, 0.85);
+  // Purple tint to push it toward magical/enchanted
+  ctx.globalCompositeOperation='multiply';
+  ctx.fillStyle='rgba(80,0,160,0.38)';
+  ctx.fillRect(0,0,LW,LH-GROUND_H);
+  ctx.globalCompositeOperation='source-over';
+  // Firefly sprites
+  for(const f of FLIES){
+    f.ph+=.024; f.x=(f.x+f.sp*.22)%LW; f.y+=Math.sin(f.ph)*.18;
+    ctx.globalAlpha=.2+.8*Math.abs(Math.sin(f.ph));
+    ctx.fillStyle='#c084fc';
+    ctx.beginPath(); ctx.arc(f.x,f.y,2,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  // Stars
+  for(const s of STARS){
+    s.t+=s.dt; ctx.globalAlpha=.15+.55*Math.abs(Math.sin(s.t));
+    ctx.fillStyle='#ddd6fe';
+    ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  // Ground glow
+  const gg=ctx.createLinearGradient(0,LH-GROUND_H-55,0,LH-GROUND_H);
+  gg.addColorStop(0,'rgba(147,51,234,0)'); gg.addColorStop(1,'rgba(147,51,234,0.22)');
+  ctx.fillStyle=gg; ctx.fillRect(0,LH-GROUND_H-55,LW,55);
+}
+
+function drawBG2(){
+  // Ancient Dungeon — 4-layer seamless cave, CC0
+  // Back to front; each layer tiles the full bg height
+  drawBGLayer(IMGS.b2_back,  0.04);
+  drawBGLayer(IMGS.b2_far,   0.16);
+  drawBGLayer(IMGS.b2_mid,   0.40);
+  drawBGLayer(IMGS.b2_front, 0.72);
+  // Torch lights scroll with the world
+  drawTorches('#fbbf24');
+  // Ambient darkness at ceiling
+  const dt=ctx.createLinearGradient(0,0,0,50);
+  dt.addColorStop(0,'rgba(0,0,0,0.55)'); dt.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=dt; ctx.fillRect(0,0,LW,50);
+}
+
+function drawBG3(){
+  // Lava Cavern — same cave pack as biome 1, orange-tinted
+  drawBGLayer(IMGS.b3_0, 0.00);
+  drawBGLayer(IMGS.b3_1, 0.10);
+  drawBGLayer(IMGS.b3_2, 0.22);
+  drawBGLayer(IMGS.b3_3, 0.40);
+  drawBGLayer(IMGS.b3_4, 0.60);
+  drawBGLayer(IMGS.b3_5, 0.78);
+  // Lava tint — multiply shifts neutral cave art toward molten orange
+  ctx.globalCompositeOperation='multiply';
+  ctx.fillStyle='rgba(255,75,5,0.60)';
+  ctx.fillRect(0,0,LW,LH-GROUND_H);
+  ctx.globalCompositeOperation='source-over';
+  // Glow rising from lava floor
+  const lg=ctx.createLinearGradient(0,LH-GROUND_H-130,0,LH-GROUND_H);
+  lg.addColorStop(0,'rgba(255,60,0,0)'); lg.addColorStop(1,'rgba(255,90,0,0.50)');
+  ctx.fillStyle=lg; ctx.fillRect(0,LH-GROUND_H-130,LW,130);
+  drawTorches('#ff6600');
+  spawnEmber(false); drawEmberLayer();
+}
+
+function drawBG4(){
+  // Volcanic Hellscape — 6-layer volcano pack, CC0
+  // Deepest layers: near-static sky/horizon; nearest: fast-moving lava foreground
+  drawBGLayer(IMGS.b4_1, 0.04); // distant sky
+  drawBGLayer(IMGS.b4_2, 0.10);
+  drawBGLayer(IMGS.b4_3, 0.22);
+  drawBGLayer(IMGS.b4_4, 0.40);
+  drawBGLayer(IMGS.b4_5, 0.62);
+  drawBGLayer(IMGS.b4_6, 0.85); // near foreground rocks/lava
+  // Mild red tint to unify the palette
+  ctx.globalCompositeOperation='multiply';
+  ctx.fillStyle='rgba(255,30,0,0.25)';
+  ctx.fillRect(0,0,LW,LH-GROUND_H);
+  ctx.globalCompositeOperation='source-over';
+  // Floor heat glow
+  const flg=ctx.createLinearGradient(0,LH-GROUND_H-120,0,LH-GROUND_H);
+  flg.addColorStop(0,'rgba(255,60,0,0)'); flg.addColorStop(1,'rgba(255,100,0,0.55)');
+  ctx.fillStyle=flg; ctx.fillRect(0,LH-GROUND_H-120,LW,120);
+  spawnEmber(true); drawEmberLayer();
+}
+
+/* ── GROUND ──────────────────────────────────────────────────── */
+function drawGround(){
+  const gy=LH-GROUND_H;
+  if(biome===0){
+    ctx.fillStyle='#5d4037'; ctx.fillRect(0,gy,LW,GROUND_H);
+    ctx.fillStyle='#4caf50'; ctx.fillRect(0,gy,LW,14);
+    ctx.fillStyle='#388e3c'; ctx.fillRect(0,gy+10,LW,4);
+    ctx.strokeStyle='rgba(0,0,0,0.12)'; ctx.lineWidth=1;
+    for(let x=-gOff;x<LW+48;x+=48){
+      ctx.beginPath(); ctx.moveTo(x,gy+14); ctx.lineTo(x+28,gy+14); ctx.stroke();
+    }
+  } else if(biome===1){
+    ctx.fillStyle='#1a0a2e'; ctx.fillRect(0,gy,LW,GROUND_H);
+    ctx.fillStyle='#3d1f5e'; ctx.fillRect(0,gy,LW,14);
+    ctx.fillStyle='#7e22ce'; ctx.fillRect(0,gy+10,LW,4);
+    [45,135,215,325,415].forEach(mx=>{
+      const px=((mx-gOff*.5+LW*3)%(LW+60))-30;
+      ctx.fillStyle='#f3e8ff'; ctx.fillRect(px-3,gy-13,6,13);
+      ctx.fillStyle='#9333ea';
+      ctx.beginPath(); ctx.arc(px,gy-13,9,Math.PI,0,false); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha=0.28;
+      const mgg=ctx.createRadialGradient(px,gy-14,0,px,gy-14,16);
+      mgg.addColorStop(0,'#c084fc'); mgg.addColorStop(1,'rgba(192,132,252,0)');
+      ctx.fillStyle=mgg; ctx.beginPath(); ctx.arc(px,gy-14,16,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha=1;
+    });
+  } else if(biome===2){
+    ctx.fillStyle='#1c1917'; ctx.fillRect(0,gy,LW,GROUND_H);
+    ctx.fillStyle='#44403c'; ctx.fillRect(0,gy,LW,8);
+    ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1;
+    for(let x=-gOff;x<LW+48;x+=48) ctx.strokeRect(x,gy+8,48,GROUND_H-8);
+  } else if(biome===3){
+    ctx.fillStyle='#0c0500'; ctx.fillRect(0,gy,LW,GROUND_H);
+    ctx.strokeStyle=`rgba(255,69,0,${.55+.35*Math.sin(lavaPhase)})`; ctx.lineWidth=2;
+    for(let x=-gOff;x<LW+60;x+=60){
+      ctx.beginPath();
+      ctx.moveTo(x,gy+4); ctx.lineTo(x+18,gy+14);
+      ctx.lineTo(x+34,gy+7); ctx.lineTo(x+54,gy+18); ctx.stroke();
+    }
+  } else {
+    const hf=ctx.createLinearGradient(0,gy,0,gy+GROUND_H);
+    hf.addColorStop(0,'#7f1d1d'); hf.addColorStop(1,'#450a0a');
+    ctx.fillStyle=hf; ctx.fillRect(0,gy,LW,GROUND_H);
+    const ls=ctx.createLinearGradient(0,gy,0,gy+10);
+    ls.addColorStop(0,`rgba(255,${70+40*Math.sin(lavaPhase*2)},0,0.88)`);
+    ls.addColorStop(1,'rgba(180,20,0,0.55)');
+    ctx.fillStyle=ls; ctx.fillRect(0,gy,LW,10);
+  }
+}
+
+/* ── PIPES PER BIOME ─────────────────────────────────────────── */
+function drawPipes(){
+  for(const p of pipes){
+    if(biome<=1)       drawForestPillar(p);
+    else if(biome===2) drawStonePillar(p);
+    else if(biome===3) drawLavaPillar(p);
+    else               drawHellPillar(p);
+  }
+}
+function drawForestPillar({x,topH,botY}){
+  const botH=LH-GROUND_H-botY,w=PIPE_W,cH=20,cO=5;
+  const stone=ctx.createLinearGradient(x,0,x+w,0);
+  stone.addColorStop(0,'#4a5568'); stone.addColorStop(.3,'#718096');
+  stone.addColorStop(.7,'#4a5568'); stone.addColorStop(1,'#2d3748');
+  ctx.fillStyle=stone;
+  ctx.fillRect(x,0,w,topH-cH); ctx.fillRect(x,botY+cH,w,botH-cH);
+  ctx.fillStyle=biome===0?'rgba(76,175,80,.32)':'rgba(107,33,168,.28)';
+  ctx.fillRect(x,0,w,topH-cH); ctx.fillRect(x,botY+cH,w,botH-cH);
+  const cap=ctx.createLinearGradient(x-cO,0,x+w+cO,0);
+  cap.addColorStop(0,'#2d3748'); cap.addColorStop(.45,'#a0aec0'); cap.addColorStop(1,'#1a202c');
+  ctx.fillStyle=cap;
+  ctx.fillRect(x-cO,topH-cH,w+cO*2,cH); ctx.fillRect(x-cO,botY,w+cO*2,cH);
+  ctx.fillStyle='rgba(255,255,255,0.1)';
+  ctx.fillRect(x+5,0,7,topH-cH); ctx.fillRect(x+5,botY+cH,7,botH-cH);
+}
+function drawStonePillar({x,topH,botY}){
+  const botH=LH-GROUND_H-botY,w=PIPE_W,cH=20,cO=5;
+  ctx.fillStyle='#44403c';
+  ctx.fillRect(x,0,w,topH-cH); ctx.fillRect(x,botY+cH,w,botH-cH);
+  ctx.strokeStyle='rgba(0,0,0,.45)'; ctx.lineWidth=1.5;
+  for(let r=0;r<topH-cH;r+=20){
+    ctx.beginPath(); ctx.moveTo(x,r); ctx.lineTo(x+w,r); ctx.stroke();
+    const bx=x+((Math.floor(r/20)%2)*(w/2));
+    ctx.beginPath(); ctx.moveTo(bx,r); ctx.lineTo(bx,r+20); ctx.stroke();
+  }
+  for(let r=botY+cH;r<botY+botH;r+=20){
+    ctx.beginPath(); ctx.moveTo(x,r); ctx.lineTo(x+w,r); ctx.stroke();
+  }
+  const cg=ctx.createLinearGradient(x-cO,0,x+w+cO,0);
+  cg.addColorStop(0,'#292524'); cg.addColorStop(.5,'#78716c'); cg.addColorStop(1,'#1c1917');
+  ctx.fillStyle=cg;
+  ctx.fillRect(x-cO,topH-cH,w+cO*2,cH); ctx.fillRect(x-cO,botY,w+cO*2,cH);
+}
+function drawLavaPillar({x,topH,botY}){
+  const botH=LH-GROUND_H-botY,w=PIPE_W,cH=20,cO=5;
+  const obs=ctx.createLinearGradient(x,0,x+w,0);
+  obs.addColorStop(0,'#1a0800'); obs.addColorStop(.4,'#3d1a00');
+  obs.addColorStop(.7,'#2a1000'); obs.addColorStop(1,'#0f0500');
+  ctx.fillStyle=obs;
+  ctx.fillRect(x,0,w,topH); ctx.fillRect(x,botY,w,botH);
+  ctx.strokeStyle=`rgba(255,102,0,${.55+.4*Math.sin(lavaPhase)})`; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(x+15,0); ctx.lineTo(x+22,topH*.3);
+  ctx.lineTo(x+10,topH*.55); ctx.lineTo(x+18,topH*.85); ctx.stroke();
+  const lc=ctx.createLinearGradient(x-cO,0,x+w+cO,0);
+  lc.addColorStop(0,'#7f2200'); lc.addColorStop(.5,'#cc3300'); lc.addColorStop(1,'#7f2200');
+  ctx.fillStyle=lc;
+  ctx.fillRect(x-cO,topH-cH,w+cO*2,cH); ctx.fillRect(x-cO,botY,w+cO*2,cH);
+  ctx.globalAlpha=.75; ctx.fillStyle='#ff4500';
+  ctx.beginPath(); ctx.arc(x+20,topH+5,4,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x+40,topH+2,3,0,Math.PI*2); ctx.fill();
+  ctx.globalAlpha=1;
+}
+function drawHellPillar({x,topH,botY}){
+  const botH=LH-GROUND_H-botY,w=PIPE_W,cH=22,cO=6;
+  const bg=ctx.createLinearGradient(x,0,x+w,0);
+  bg.addColorStop(0,'#450a0a'); bg.addColorStop(.35,'#7f1d1d');
+  bg.addColorStop(.7,'#600f0f'); bg.addColorStop(1,'#300505');
+  ctx.fillStyle=bg;
+  ctx.fillRect(x,0,w,topH); ctx.fillRect(x,botY,w,botH);
+  ctx.fillStyle='rgba(255,60,0,.18)';
+  ctx.fillRect(x,0,5,topH); ctx.fillRect(x+w-5,0,5,topH);
+  ctx.fillRect(x,botY,5,botH); ctx.fillRect(x+w-5,botY,5,botH);
+  const hc=ctx.createLinearGradient(x-cO,0,x+w+cO,0);
+  hc.addColorStop(0,'#7f1d1d'); hc.addColorStop(.5,'#ef4444'); hc.addColorStop(1,'#7f1d1d');
+  ctx.fillStyle=hc;
+  ctx.fillRect(x-cO,topH-cH,w+cO*2,cH); ctx.fillRect(x-cO,botY,w+cO*2,cH);
+  pillarFlames(x,w,cO,topH,false); pillarFlames(x,w,cO,botY+cH,true);
+}
+let fph=0;
+function pillarFlames(x,w,cO,y,up){
+  fph+=0.04;
+  for(let i=0;i<5;i++){
+    const fx=x-cO+(w+cO*2)/4*i+Math.sin(fph+i)*3;
+    const fh=14+6*Math.abs(Math.sin(fph+i*.7));
+    ctx.globalAlpha=.65+.35*Math.sin(fph+i);
+    ctx.fillStyle=i%2===0?'#ff6600':'#ffaa00';
+    ctx.beginPath();
+    if(!up){ctx.moveTo(fx,y);ctx.quadraticCurveTo(fx+4,y+fh/2,fx,y+fh);ctx.quadraticCurveTo(fx-4,y+fh/2,fx,y);}
+    else   {ctx.moveTo(fx,y);ctx.quadraticCurveTo(fx+4,y-fh/2,fx,y-fh);ctx.quadraticCurveTo(fx-4,y-fh/2,fx,y);}
+    ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+/* ── BIRD DRAW ───────────────────────────────────────────────── */
+function drawBird(){
+  const c=BC[biome];
+  ctx.save();
+  ctx.translate(bird.x,bird.y);
+  ctx.rotate(bird.angle*Math.PI/180);
+  const wf=Math.sin(bird.wing);
+  // Tail feathers
+  [-0.38,0,0.38].forEach((spread,i)=>{
+    const ty=spread*14;
+    ctx.fillStyle=i===1?c.tail:c.thi;
+    ctx.beginPath();
+    ctx.moveTo(-10,ty*.25); ctx.quadraticCurveTo(-24,ty,-38-i*2,ty*.7);
+    ctx.quadraticCurveTo(-24,ty*.1,-10,3); ctx.fill();
+  });
+  // Flame trail biome 3+
+  if(biome>=3){
+    for(let i=0;i<5;i++){
+      const fx=-14-i*6, fy=Math.sin(bird.wing+i*.8)*3;
+      ctx.globalAlpha=(1-i/5)*.75;
+      ctx.fillStyle=biome>=4?'#ff3300':'#ff8800';
+      ctx.beginPath(); ctx.arc(fx,fy,5.5-i*.7,0,Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+  // Shadow
+  ctx.fillStyle='rgba(0,0,0,0.18)';
+  ctx.beginPath(); ctx.ellipse(2,8,BIRD_R,.85*BIRD_R*.5,0,0,Math.PI*2); ctx.fill();
+  // Body
+  const bg=ctx.createRadialGradient(-4,-3,2,1,2,BIRD_R);
+  bg.addColorStop(0,c.hi); bg.addColorStop(.5,c.body); bg.addColorStop(1,c.dark);
+  ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(0,2,BIRD_R,BIRD_R-3,0,0,Math.PI*2); ctx.fill();
+  // Wing
+  ctx.save(); ctx.translate(0,-2); ctx.rotate(wf*.48-.1);
+  const wg=ctx.createRadialGradient(0,0,2,0,0,17);
+  wg.addColorStop(0,c.whi); wg.addColorStop(1,c.wing);
+  ctx.fillStyle=wg;
+  ctx.beginPath(); ctx.ellipse(-3,-5,17,7,-0.44,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle=c.body; ctx.lineWidth=0.8; ctx.globalAlpha=0.4;
+  for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(-14+i*5,-4);ctx.lineTo(-14+i*5-2,-10);ctx.stroke();}
+  ctx.globalAlpha=1; ctx.restore();
+  // Head
+  ctx.fillStyle=c.body; ctx.beginPath(); ctx.arc(12,-5,9,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=c.hi; ctx.beginPath(); ctx.ellipse(9,-9,5,3.5,-0.5,0,Math.PI*2); ctx.fill();
+  // Crest
+  ctx.fillStyle=c.crest;
+  ctx.beginPath(); ctx.moveTo(10,-13); ctx.quadraticCurveTo(13,-24,16,-21);
+  ctx.quadraticCurveTo(14,-15,11,-13); ctx.fill();
+  // Eye
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(15,-6,4.5,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=c.eye; ctx.beginPath(); ctx.arc(16,-6,2.8,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(17,-7,1.1,0,Math.PI*2); ctx.fill();
+  // Beak
+  ctx.fillStyle=c.beak;
+  ctx.beginPath(); ctx.moveTo(19,-7); ctx.lineTo(30,-5); ctx.lineTo(19,-3); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.22)';
+  ctx.beginPath(); ctx.moveTo(19,-7); ctx.lineTo(27,-6); ctx.lineTo(19,-5); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+/* ── PARTICLES ───────────────────────────────────────────────── */
+function drawParts(){
+  for(const p of [...parts,...magic]){
+    ctx.globalAlpha=p.life; ctx.fillStyle=p.c;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+/* ── SCORE HUD ───────────────────────────────────────────────── */
+function drawScore(){
+  ctx.save();
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  const bn=BIOMES[biome].name;
+  ctx.font='bold 12px Georgia';
+  const bw=ctx.measureText(bn).width+18;
+  ctx.fillStyle='rgba(0,0,0,.52)'; rr(LW/2-bw/2,5,bw,20,5); ctx.fill();
+  ctx.fillStyle='#e2e8f0'; ctx.fillText(bn,LW/2,9);
+  ctx.font='bold 48px Georgia';
+  ctx.strokeStyle='rgba(0,0,0,.6)'; ctx.lineWidth=6;
+  ctx.strokeText(score,LW/2,30);
+  ctx.fillStyle='#fff8e7'; ctx.fillText(score,LW/2,30);
+  ctx.restore();
+}
+
+/* ── FLASH ───────────────────────────────────────────────────── */
+let flash=0;
+function drawFlash(){
+  if(flash>0){
+    ctx.fillStyle=`rgba(220,0,0,${flash*.55})`;
+    ctx.fillRect(0,0,LW,LH);
+    flash=Math.max(0,flash-.06);
+  }
+}
+
+/* ── IDLE ────────────────────────────────────────────────────── */
+function idleBird(now){
+  bird.y=LH/2+Math.sin(now/380)*9;
+  bird.angle=Math.sin(now/380)*7;
+  bird.wing=(bird.wing+0.09)%(Math.PI*2);
+  if(Math.random()<0.06) spawnMagic();
+}
+
+/* ── PANELS & BUTTONS ────────────────────────────────────────── */
+function panel(cx,cy,w,h){
+  const x=cx-w/2,y=cy-h/2;
+  ctx.fillStyle='rgba(0,0,0,.6)'; rr(x+4,y+4,w,h,16); ctx.fill();
+  const pg=ctx.createLinearGradient(x,y,x,y+h);
+  pg.addColorStop(0,'rgba(25,10,55,.96)'); pg.addColorStop(1,'rgba(10,3,22,.96)');
+  ctx.fillStyle=pg; rr(x,y,w,h,16); ctx.fill();
+  ctx.strokeStyle='rgba(167,139,250,.6)'; ctx.lineWidth=2; rr(x,y,w,h,16); ctx.stroke();
+  ctx.strokeStyle='rgba(167,139,250,.18)'; ctx.lineWidth=1; rr(x+3,y+3,w-6,h-6,14); ctx.stroke();
+}
+function btn(cx,y,w,h,lbl,c1,c2){
+  const x=cx-w/2;
+  ctx.fillStyle='rgba(0,0,0,.32)'; rr(x+3,y+3,w,h,h/2); ctx.fill();
+  const bg=ctx.createLinearGradient(cx,y,cx,y+h);
+  bg.addColorStop(0,c1); bg.addColorStop(1,c2);
+  ctx.fillStyle=bg; rr(x,y,w,h,h/2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.18)'; rr(x+4,y+3,w-8,h/2,h/2-2); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 19px Georgia';
+  ctx.shadowColor='rgba(0,0,0,.5)'; ctx.shadowBlur=4;
+  ctx.fillText(lbl,cx,y+h/2); ctx.shadowBlur=0;
+}
+
+/* ── START SCREEN ────────────────────────────────────────────── */
+function drawStart(now){
+  const pulse=0.7+0.3*Math.sin(now/500), cy=LH/2-8;
+  panel(LW/2,cy,348,352);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 34px Georgia'; ctx.strokeStyle='#1a0050'; ctx.lineWidth=5;
+  ctx.strokeText('⚔  THE GAUNTLET  ⚔',LW/2,cy-118);
+  const tg=ctx.createLinearGradient(0,cy-135,0,cy-100);
+  tg.addColorStop(0,'#fbbf24'); tg.addColorStop(1,'#f59e0b');
+  ctx.fillStyle=tg; ctx.fillText('⚔  THE GAUNTLET  ⚔',LW/2,cy-118);
+  ctx.font='bold 16px Georgia'; ctx.fillStyle='#c4b5fd';
+  ctx.fillText('A Dungeons & Dragons Adventure',LW/2,cy-88);
+  ctx.strokeStyle='rgba(167,139,250,.35)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(LW/2-125,cy-70); ctx.lineTo(LW/2+125,cy-70); ctx.stroke();
+  ctx.font='13px Georgia'; ctx.fillStyle='#a78bfa';
+  ctx.fillText('Journey through 5 realms:',LW/2,cy-52);
+  ['🌲 Sunlit Forest','🌙 Enchanted Forest','🏰 Ancient Dungeon','🌋 Lava Cavern','☠ Volcanic Hellscape']
+    .forEach((r,i)=>{ ctx.font='12px Georgia'; ctx.fillStyle='#7c3aed'; ctx.fillText(r,LW/2,cy-34+i*17); });
+  if(best>0){ ctx.font='15px Georgia'; ctx.fillStyle='#fbbf24'; ctx.fillText('Best: '+best+' pipes',LW/2,cy+68); }
+  ctx.font='14px Georgia'; ctx.fillStyle='#6b7280';
+  ctx.fillText('SPACE / Click / Tap to flap',LW/2,cy+90);
+  ctx.globalAlpha=pulse;
+  btn(LW/2,cy+113,224,52,'⚔  BEGIN QUEST','#7c3aed','#4c1d95');
+  ctx.globalAlpha=1;
+}
+
+/* ── GAME OVER ───────────────────────────────────────────────── */
+function drawDead(){
+  const cy=LH/2-8;
+  panel(LW/2,cy,348,340);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 42px Georgia'; ctx.strokeStyle='#7f0000'; ctx.lineWidth=5;
+  ctx.strokeText('YOU DIED',LW/2,cy-110);
+  const tg=ctx.createLinearGradient(0,cy-132,0,cy-88);
+  tg.addColorStop(0,'#ff4444'); tg.addColorStop(1,'#b71c1c');
+  ctx.fillStyle=tg; ctx.fillText('YOU DIED',LW/2,cy-110);
+  ctx.font='14px Georgia'; ctx.fillStyle='#c4b5fd';
+  ctx.fillText('Realm reached: '+BIOMES[biome].name,LW/2,cy-78);
+  ctx.strokeStyle='rgba(167,139,250,.35)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(LW/2-115,cy-60); ctx.lineTo(LW/2+115,cy-60); ctx.stroke();
+  ctx.font='15px Georgia'; ctx.fillStyle='#9ca3af';
+  ctx.fillText('PIPES',LW/2-70,cy-38); ctx.fillText('BEST',LW/2+70,cy-38);
+  ctx.font='bold 40px Georgia'; ctx.fillStyle='#e2e8f0';
+  ctx.fillText(score,LW/2-70,cy+2);
+  ctx.fillStyle='#fbbf24'; ctx.fillText(best,LW/2+70,cy+2);
+  if(score===best&&score>0){ ctx.font='bold 13px Georgia'; ctx.fillStyle='#fbbf24'; ctx.fillText('✦  NEW RECORD!  ✦',LW/2,cy+40); }
+  btn(LW/2,cy+62,234,52,'↺  TRY AGAIN','#7c3aed','#4c1d95');
+  const tips=['Hold Space to float!','Gaps are wide early – find your rhythm','Speed grows as you progress','Can you reach the Hellscape?'];
+  ctx.font='13px Georgia'; ctx.fillStyle='#4b5563';
+  ctx.fillText(tips[score%tips.length],LW/2,cy+145);
+}
+
+/* ── LOADING SCREEN ──────────────────────────────────────────── */
+function drawLoading(){
+  ctx.fillStyle='#0a0010'; ctx.fillRect(0,0,LW,LH);
+  const pct = imgsLoaded/imgsTotal;
+  // Bar
+  ctx.fillStyle='rgba(167,139,250,0.2)';
+  ctx.fillRect(LW/2-120,LH/2-8,240,16);
+  ctx.fillStyle='#7c3aed';
+  ctx.fillRect(LW/2-120,LH/2-8,240*pct,16);
+  ctx.strokeStyle='rgba(167,139,250,0.5)'; ctx.lineWidth=1;
+  ctx.strokeRect(LW/2-120,LH/2-8,240,16);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 14px Georgia'; ctx.fillStyle='#c4b5fd';
+  ctx.fillText('Loading realms…  '+Math.round(pct*100)+'%', LW/2, LH/2+26);
+  ctx.font='bold 28px Georgia'; ctx.fillStyle='#fbbf24';
+  ctx.fillText('⚔  THE GAUNTLET  ⚔', LW/2, LH/2-50);
+}
+
+/* ── MAIN LOOP ───────────────────────────────────────────────── */
+function loop(now){
+  requestAnimationFrame(loop);
+  ctx.clearRect(0,0,LW,LH);
+
+  if(imgsLoaded < imgsTotal){ drawLoading(); return; }
+
+  worldX += state===S.PLAY ? curSpeed : 0.35;
+
+  if(biome===0)      drawBG0();
+  else if(biome===1) drawBG1();
+  else if(biome===2) drawBG2();
+  else if(biome===3) drawBG3();
+  else               drawBG4();
+
+  if(fadeAlpha>0){
+    ctx.fillStyle=`rgba(0,0,0,${fadeAlpha})`;
+    ctx.fillRect(0,0,LW,LH);
+    fadeAlpha=Math.max(0,fadeAlpha-.022);
+  }
+
+  if(state===S.START){
+    idleBird(now); updateParts();
+    drawGround(); drawParts(); drawBird(); drawStart(now);
+  } else if(state===S.PLAY){
+    updateBird(); updatePipes(now); updateGround(); updateParts();
+    drawPipes(); drawGround(); drawParts(); drawBird(); drawScore(); drawFlash();
+    if(collides()) die();
+  } else {
+    updateGround(); updateParts();
+    drawPipes(); drawGround(); drawParts(); drawBird(); drawScore(); drawFlash(); drawDead();
+  }
+}
+
+/* ── GAME EVENTS ─────────────────────────────────────────────── */
+function die(){
+  state=S.DEAD; flash=1; best=Math.max(best,score);
+  spawnDeath(); bird.vy=0; bird.angle=75;
+}
+function go(){
+  score=0; state=S.PLAY; held=false; biome=0; fadeAlpha=0;
+  embers=[]; parts=[]; magic=[];
+  lastPipe=performance.now()-(BASE_INTERVAL-950);
+  resetBird(); resetPipes(); flap();
+}
+function input(){
+  if(state===S.START||state===S.DEAD) go(); else flap();
+}
+document.addEventListener('keydown',e=>{
+  if(e.code==='Space'||e.key==='ArrowUp'){ e.preventDefault(); if(!e.repeat) input(); held=true; }
+});
+document.addEventListener('keyup',e=>{
+  if(e.code==='Space'||e.key==='ArrowUp') held=false;
+});
+canvas.addEventListener('pointerdown',e=>{ e.preventDefault(); held=true; input(); });
+canvas.addEventListener('pointerup',()=>held=false);
+canvas.addEventListener('pointerleave',()=>held=false);
+
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
