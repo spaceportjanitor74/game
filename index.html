@@ -2,14 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen" />
+  <meta name="theme-color" content="#0a0010" />
   <title>The Gauntlet</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { width:100%; height:100%; overflow:hidden; background:#0a0010;
       display:flex; align-items:center; justify-content:center;
-      font-family:'Georgia',serif; touch-action:none; }
-    canvas { display:block; image-rendering:pixelated; }
+      font-family:'Georgia',serif; touch-action:none;
+      overscroll-behavior:none; -webkit-user-select:none; user-select:none; }
+    canvas { display:block; image-rendering:pixelated; image-rendering:crisp-edges;
+      image-rendering:-moz-crisp-edges; touch-action:none; }
   </style>
 </head>
 <body>
@@ -22,12 +28,20 @@ const canvas = document.getElementById('gameCanvas');
 const ctx    = canvas.getContext('2d');
 const LW = 480, LH = 640;
 let scale = 1;
+const isMobile = ('ontouchstart' in window) || window.matchMedia('(pointer:coarse)').matches;
 function resize(){
-  scale = Math.min(window.innerWidth/LW, window.innerHeight/LH);
-  canvas.width = LW*scale; canvas.height = LH*scale;
+  const vp = window.visualViewport;
+  const vw = vp ? vp.width  : window.innerWidth;
+  const vh = vp ? vp.height : window.innerHeight;
+  scale = Math.min(vw/LW, vh/LH);
+  canvas.width  = Math.round(LW*scale);
+  canvas.height = Math.round(LH*scale);
   ctx.setTransform(scale,0,0,scale,0,0);
 }
-window.addEventListener('resize', resize); resize();
+window.addEventListener('resize', resize);
+if(window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+document.addEventListener('contextmenu', e=>e.preventDefault());
+resize();
 
 /* ── IMAGE PRELOAD ───────────────────────────────────────────── */
 const IMGS = {};
@@ -241,15 +255,17 @@ let lavaPhase=0, torchPhase=0;
 
 function spawnDeath(){
   const c=CHARS[selectedChar], cols=[c.body,c.tail,c.hi,c.thi];
-  for(let i=0;i<24;i++){
-    const a=(Math.PI*2*i)/24+Math.random()*.4, sp=2+Math.random()*5;
+  const n=isMobile?14:24;
+  for(let i=0;i<n;i++){
+    const a=(Math.PI*2*i)/n+Math.random()*.4, sp=2+Math.random()*5;
     parts.push({x:bird.x,y:bird.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
       life:1,r:3+Math.random()*5,c:cols[i%4]});
   }
 }
 function spawnMagic(){
   const col=CHARS[selectedChar].spark;
-  for(let i=0;i<7;i++){
+  const n=isMobile?4:7;
+  for(let i=0;i<n;i++){
     const a=Math.random()*Math.PI*2,sp=1+Math.random()*2.5;
     magic.push({x:bird.x-8,y:bird.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
       life:1,r:1.5+Math.random()*2.5,c:col});
@@ -269,9 +285,15 @@ function updateParts(){
     const e=embers[i]; e.x+=e.vx; e.y+=e.vy; e.vy-=0.03; e.life-=0.018;
     if(e.life<=0||e.y<0) embers.splice(i,1);
   }
+  // Mobile: cap total live particles to keep frame rate stable
+  if(isMobile){
+    if(embers.length>18) embers.length=18;
+    if(magic.length>8) magic.length=8;
+  }
 }
 function spawnEmber(heavy){
-  if(Math.random()<(heavy?.55:.22))
+  const rate=isMobile?(heavy?.30:.12):(heavy?.55:.22);
+  if(Math.random()<rate)
     embers.push({x:Math.random()*LW,y:LH-GROUND_H-2,
       vx:(Math.random()-.5)*1.4,vy:-(1+Math.random()*2.2),
       life:1,r:1+Math.random()*2.2,c:Math.random()<.5?'#ff6600':'#ffaa00'});
@@ -1023,8 +1045,10 @@ function drawStart(now){
   for(let i=0;i<CHARS.length;i++) drawMiniChar(charXs[i],cy+62,i,i===selectedChar);
   ctx.textBaseline='middle';
   if(best>0){ ctx.font='14px Georgia'; ctx.fillStyle='#fbbf24'; ctx.fillText('Best: '+best+' pipes',LW/2,cy+100); }
+  ctx.font='12px Georgia'; ctx.fillStyle='#4b5563';
+  ctx.fillText(isMobile?'Tap & hold to float':'SPACE or click & hold to float',LW/2,cy+112);
   ctx.globalAlpha=pulse;
-  btn(LW/2,cy+118,224,52,'⚔  BEGIN QUEST','#7c3aed','#4c1d95');
+  btn(LW/2,cy+130,224,52,'⚔  BEGIN QUEST','#7c3aed','#4c1d95');
   ctx.globalAlpha=1;
 }
 
