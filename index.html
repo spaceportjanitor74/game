@@ -789,20 +789,32 @@ function drawForestPillar({x,topH,botY}){
 
   // ── BOTTOM: pixel art tree ────────────────────────────────────
   if(sp){
-    const tw=20, tx=x+(PIPE_W-tw)/2;
+    // Narrower gnarled trunk
+    const tw=14, tx=x+(PIPE_W-tw)/2;
     ctx.fillStyle='#1a1218'; ctx.fillRect(tx,botY,tw,botH);
-    ctx.fillStyle='#2a1e28'; ctx.fillRect(tx,botY,4,botH);
+    ctx.fillStyle='#2a1e28'; ctx.fillRect(tx,botY,3,botH);
     ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.fillRect(tx+tw-3,botY,3,botH);
     ctx.fillStyle='#100c16';
-    for(let by=botY+8;by<LH-GROUND_H;by+=18){ ctx.fillRect(tx+5,by,7,2); ctx.fillRect(tx+4,by+9,5,2); }
-    ctx.strokeStyle='#221828'; ctx.lineWidth=3;
-    [[tx+tw/2,botY-2,tx-16,botY-28],[tx+tw/2,botY-2,tx+tw+18,botY-22],
-     [tx+tw/2,botY-2,tx-6,botY-14],[tx+tw/2,botY-2,tx+tw+8,botY-12]]
-      .forEach(([x1,y1,x2,y2])=>{ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();});
+    for(let by=botY+8;by<LH-GROUND_H;by+=18){ ctx.fillRect(tx+4,by,5,2); ctx.fillRect(tx+3,by+9,4,2); }
+    // Dark foliage crown — 4 stacked spooky tiers, widest at bottom
+    const fCol=['#0a1808','#0f2010','#142814','#1a3018'];
+    const fHi=['#14200c','#1a2c14','#20381a','#284420'];
+    for(let fl=0;fl<4;fl++){
+      const fw=PIPE_W+18-fl*8, fx2=x+(PIPE_W-fw)/2;
+      const fy=botY-8-fl*16;
+      ctx.fillStyle=fCol[fl];
+      ctx.fillRect(fx2,fy+9,fw,13);
+      ctx.beginPath(); ctx.moveTo(fx2+fw/2,fy); ctx.lineTo(fx2+fw,fy+11); ctx.lineTo(fx2,fy+11); ctx.fill();
+      ctx.fillStyle=fHi[fl]; ctx.fillRect(fx2,fy+9,fw,2);
+    }
+    // Bare branch tips poking from crown sides
+    ctx.strokeStyle='#221828'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(x-2,botY-12); ctx.lineTo(x-18,botY-34); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x+PIPE_W+2,botY-10); ctx.lineTo(x+PIPE_W+18,botY-28); ctx.stroke();
     ctx.lineWidth=1;
-    ctx.strokeStyle='rgba(140,130,160,0.3)';
-    [[tx-12,botY-22,tx+6,botY-10],[tx+tw+14,botY-16,tx+tw-2,botY-6]]
-      .forEach(([x1,y1,x2,y2])=>{ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();});
+    // Cobweb
+    ctx.strokeStyle='rgba(140,130,160,0.25)';
+    ctx.beginPath(); ctx.moveTo(x-14,botY-30); ctx.lineTo(x+4,botY-10); ctx.stroke();
   } else {
     const tw=18, tx=x+(PIPE_W-tw)/2;
     ctx.fillStyle='#5c3a1a'; ctx.fillRect(tx,botY,tw,botH);
