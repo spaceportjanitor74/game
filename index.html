@@ -108,8 +108,9 @@ function pipeGap(s)  { return BASE_GAP-(BASE_GAP-MIN_GAP)*Math.min(s/70,1); }
 function pipeInt(s)  { return BASE_INTERVAL-(BASE_INTERVAL-MIN_INTERVAL)*Math.min(s/70,1); }
 
 /* ── AUDIO ───────────────────────────────────────────────────── */
-// Format detection — iOS/Safari does not support OGG Vorbis
-const _canOgg=new Audio().canPlayType('audio/ogg')!=='';
+// Format detection — 'audio/ogg' without a codec returns 'maybe' on iOS 11+ (FLAC-in-OGG)
+// but OGG Vorbis is not supported. Use the codec query to get an accurate answer.
+const _canOgg=new Audio().canPlayType('audio/ogg; codecs="vorbis"')!=='';
 // iOS + iPadOS require play() on each element during a user gesture
 // (Chrome/Firefox use page-level activation after the first interaction)
 const _isiOS=/iP(hone|ad|od)/.test(navigator.userAgent)||
@@ -200,7 +201,7 @@ function unlockAudio(){
   // iOS/iPadOS requires play() on each element during the user gesture.
   // Other browsers (Chrome, Firefox) use page-level activation after first click,
   // so pre-unlocking all elements there causes unwanted simultaneous streams.
-  if(_isiOS) [...TRACKS,OVER_MUS].forEach(a=>{ const p=a.play();if(p)p.catch(()=>{}); schedulePause(a,50); });
+  if(_isiOS) [...TRACKS,OVER_MUS].forEach(a=>{ const p=a.play();if(p)p.catch(()=>{}); schedulePause(a,0); });
   const p=MENU_MUS.play(); if(p) p.catch(()=>{});
   if(!muted) fadeAudio(MENU_MUS,MUTE_VOL*0.75,0.02);
 }
@@ -232,6 +233,10 @@ function schedulePause(a,delay){
   _pauseIds.set(a,id);
 }
 function cancelPause(a){ if(_pauseIds.has(a)){ clearTimeout(_pauseIds.get(a)); _pauseIds.delete(a); } }
+function stopAudio(a){
+  if(_fadeIds.has(a)){ clearInterval(_fadeIds.get(a)); _fadeIds.delete(a); }
+  cancelPause(a); a.volume=0; a.pause();
+}
 function crossfadeTrack(idx){
   if(idx===curTrack) return;
   curTrack=idx;
@@ -249,9 +254,13 @@ function crossfadeTrack(idx){
   else { fadeAudio(FOREST_AMB,0,0.08); schedulePause(FOREST_AMB,450); }
 }
 
+/* ── STORAGE (safe wrapper — localStorage throws in iOS private mode) ─── */
+function lsGet(k,d){ try{ return localStorage.getItem(k)??d; }catch(e){ return d; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+
 /* ── STATE ───────────────────────────────────────────────────── */
 const S = {START:0,PLAY:1,DEAD:2};
-let state=S.START, score=0, best=parseInt(localStorage.getItem('gauntlet_best')||'0',10), biome=0, fadeAlpha=0, curSpeed=BASE_SPEED;
+let state=S.START, score=0, best=parseInt(lsGet('gauntlet_best','0'),10), biome=0, fadeAlpha=0, curSpeed=BASE_SPEED;
 let worldX=0;
 let shakeAmt=0, closeCooldown=0, closeCallFlash=0;
 let milestoneText='', milestoneTtl=0;
@@ -272,7 +281,7 @@ const CHARS = [
    body:'#4d7c0f',hi:'#a3e635',dark:'#1a2e05',wing:'#3f6212',whi:'#84cc16',
    tail:'#92400e',thi:'#fde68a',beak:'#d97706',eye:'#1a2e05',crest:'#65a30d',spark:'#a3e635'},
 ];
-let selectedChar = parseInt(localStorage.getItem('gauntlet_char')||'0',10);
+let selectedChar = parseInt(lsGet('gauntlet_char','0'),10);
 if(selectedChar<0||selectedChar>=CHARS.length) selectedChar=0;
 
 /* ── BIRD ────────────────────────────────────────────────────── */
@@ -1504,7 +1513,7 @@ function loop(now){
 /* ── GAME EVENTS ─────────────────────────────────────────────── */
 function die(){
   state=S.DEAD; flash=1; shakeAmt=9; best=Math.max(best,score);
-  localStorage.setItem('gauntlet_best',best);
+  lsSet('gauntlet_best',best);
   if(_xfTimer){ clearTimeout(_xfTimer); _xfTimer=null; }
   TRACKS.forEach(t=>{ fadeAudio(t,0,0.10); schedulePause(t,400); });
   fadeAudio(FOREST_AMB,0,0.10); schedulePause(FOREST_AMB,400);
@@ -1518,7 +1527,7 @@ function go(){
   embers=[]; parts=[]; magic=[]; trail=[];
   shakeAmt=0; milestoneTtl=0; biomeAnnTtl=0; closeCallFlash=0;
   lastPipe=performance.now()-(BASE_INTERVAL-950);
-  stopMenuMusic(); stopGameOver();
+  stopAudio(MENU_MUS); stopAudio(OVER_MUS);
   crossfadeTrack(0);
   resetBird(); resetPipes(); flap();
 }
@@ -1542,7 +1551,7 @@ canvas.addEventListener('pointerdown',e=>{
     const charXs=[LW/2-90,LW/2-30,LW/2+30,LW/2+90];
     for(let i=0;i<CHARS.length;i++){
       if(Math.abs(cx-charXs[i])<22&&Math.abs(cy-rowY)<22){
-        selectedChar=i; localStorage.setItem('gauntlet_char',i); playClick(); return;
+        selectedChar=i; lsSet('gauntlet_char',i); playClick(); return;
       }
     }
   }
