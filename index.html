@@ -153,6 +153,37 @@ function playFlap(){
   }catch(e){}
 }
 
+function playCloseCall(){
+  if(muted) return;
+  try{
+    const ac=getSfx(); if(ac.state==='suspended') ac.resume();
+    const dur=0.14;
+    const osc=ac.createOscillator(); osc.type='sine';
+    osc.frequency.setValueAtTime(360,ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(130,ac.currentTime+dur);
+    const g=ac.createGain();
+    g.gain.setValueAtTime(0.22,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur);
+    osc.connect(g); g.connect(ac.destination);
+    osc.start(); osc.stop(ac.currentTime+dur+0.01);
+  }catch(e){}
+}
+function playMilestone(){
+  if(muted) return;
+  try{
+    const ac=getSfx(); if(ac.state==='suspended') ac.resume();
+    [523,659,784,1047].forEach((freq,i)=>{
+      const t=ac.currentTime+i*0.08;
+      const osc=ac.createOscillator(); osc.type='triangle';
+      osc.frequency.setValueAtTime(freq,t);
+      const g=ac.createGain();
+      g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.17,t+0.01);
+      g.gain.exponentialRampToValueAtTime(0.001,t+0.28);
+      osc.connect(g); g.connect(ac.destination);
+      osc.start(t); osc.stop(t+0.30);
+    });
+  }catch(e){}
+}
 function unlockAudio(){
   if(audioUnlocked) return; audioUnlocked=true; getSfx();
   MENU_MUS.play().catch(()=>{});
@@ -193,7 +224,10 @@ function crossfadeTrack(idx){
 /* ── STATE ───────────────────────────────────────────────────── */
 const S = {START:0,PLAY:1,DEAD:2};
 let state=S.START, score=0, best=parseInt(localStorage.getItem('gauntlet_best')||'0',10), biome=0, fadeAlpha=0, curSpeed=BASE_SPEED;
-let worldX = 0;
+let worldX=0;
+let shakeAmt=0, closeCooldown=0, closeCallFlash=0;
+let milestoneText='', milestoneTtl=0;
+let biomeAnnName='', biomeAnnTtl=0;
 
 /* ── SELECTABLE CHARACTERS ───────────────────────────────────── */
 const CHARS = [
@@ -242,8 +276,14 @@ function updatePipes(now){
     const p=pipes[i]; p.x-=curSpeed;
     if(!p.passed && p.x+PIPE_W<bird.x-BIRD_R){
       p.passed=true; score++;
+      if([10,25,50,75,100].includes(score)){ milestoneText=score+'!'; milestoneTtl=1.0; playMilestone(); }
+      if(closeCooldown<=0){
+        const clearTop=bird.y-(BIRD_R-FORGIVE)-p.topH;
+        const clearBot=p.botY-(bird.y+(BIRD_R-FORGIVE));
+        if(clearTop<14||clearBot<14){ closeCooldown=40; closeCallFlash=1; playCloseCall(); }
+      }
       const nb=biomeOf(score);
-      if(nb!==biome){ biome=nb; fadeAlpha=1.0; crossfadeTrack(nb); }
+      if(nb!==biome){ biome=nb; fadeAlpha=1.0; crossfadeTrack(nb); biomeAnnName=BIOMES[nb].name.toUpperCase(); biomeAnnTtl=1.0; }
     }
     if(p.x+PIPE_W<-10) pipes.splice(i,1);
   }
@@ -265,7 +305,7 @@ let gOff=0;
 function updateGround(){ gOff=(gOff+curSpeed)%48; }
 
 /* ── PARTICLES ───────────────────────────────────────────────── */
-let parts=[], magic=[], embers=[];
+let parts=[], magic=[], embers=[], trail=[];
 let lavaPhase=0, torchPhase=0;
 
 function spawnDeath(){
@@ -288,6 +328,10 @@ function spawnMagic(){
 }
 function updateParts(){
   lavaPhase+=0.04; torchPhase+=0.09;
+  if(closeCooldown>0) closeCooldown--;
+  if(closeCallFlash>0) closeCallFlash=Math.max(0,closeCallFlash-0.07);
+  if(milestoneTtl>0) milestoneTtl=Math.max(0,milestoneTtl-0.020);
+  if(biomeAnnTtl>0) biomeAnnTtl=Math.max(0,biomeAnnTtl-0.006);
   for(let i=parts.length-1;i>=0;i--){
     const p=parts[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=0.2; p.life-=0.04;
     if(p.life<=0) parts.splice(i,1);
@@ -670,6 +714,14 @@ function drawGround(){
     }
   } else if(biome===3){
     ctx.fillStyle='#0c0500'; ctx.fillRect(0,gy,LW,GROUND_H);
+    const lsg=ctx.createLinearGradient(0,gy,0,gy+22);
+    lsg.addColorStop(0,`rgba(255,${80+30*Math.sin(lavaPhase*2)},0,0.95)`);
+    lsg.addColorStop(1,'rgba(120,20,0,0)');
+    ctx.fillStyle=lsg;
+    ctx.beginPath(); ctx.moveTo(-5,gy+22);
+    for(let wx=0;wx<=LW+8;wx+=6)
+      ctx.lineTo(wx,gy+8+Math.sin(wx*0.05+lavaPhase*3)*4+Math.sin(wx*0.12+lavaPhase*2)*2);
+    ctx.lineTo(LW+5,gy+22); ctx.closePath(); ctx.fill();
     ctx.strokeStyle=`rgba(255,69,0,${.55+.35*Math.sin(lavaPhase)})`; ctx.lineWidth=2;
     for(let x=-gOff;x<LW+60;x+=60){
       ctx.beginPath();
@@ -680,10 +732,14 @@ function drawGround(){
     const hf=ctx.createLinearGradient(0,gy,0,gy+GROUND_H);
     hf.addColorStop(0,'#7f1d1d'); hf.addColorStop(1,'#450a0a');
     ctx.fillStyle=hf; ctx.fillRect(0,gy,LW,GROUND_H);
-    const ls=ctx.createLinearGradient(0,gy,0,gy+10);
-    ls.addColorStop(0,`rgba(255,${70+40*Math.sin(lavaPhase*2)},0,0.88)`);
-    ls.addColorStop(1,'rgba(180,20,0,0.55)');
-    ctx.fillStyle=ls; ctx.fillRect(0,gy,LW,10);
+    const lsg2=ctx.createLinearGradient(0,gy,0,gy+22);
+    lsg2.addColorStop(0,`rgba(255,${70+40*Math.sin(lavaPhase*2)},0,0.92)`);
+    lsg2.addColorStop(1,'rgba(180,20,0,0)');
+    ctx.fillStyle=lsg2;
+    ctx.beginPath(); ctx.moveTo(-5,gy+22);
+    for(let wx=0;wx<=LW+8;wx+=6)
+      ctx.lineTo(wx,gy+7+Math.sin(wx*0.04+lavaPhase*2.5)*5+Math.sin(wx*0.10+lavaPhase*1.8)*2);
+    ctx.lineTo(LW+5,gy+22); ctx.closePath(); ctx.fill();
   }
 }
 
@@ -1043,6 +1099,32 @@ function drawMiniChar(cx,cy,charIdx,selected){
   ctx.fillText(c.name,cx,cy+19);
 }
 
+/* ── TRAIL ───────────────────────────────────────────────────── */
+function spawnTrail(){
+  const c=CHARS[selectedChar];
+  const rate=isMobile?0.45:0.70;
+  if(Math.random()<rate)
+    trail.push({x:bird.x-14,y:bird.y+2+(Math.random()-.5)*8,
+      vx:-(0.5+Math.random()*0.8),vy:(Math.random()-.5)*0.8,
+      life:1,r:1+Math.random()*2.2,c:c.spark});
+}
+function updateTrail(){
+  for(let i=trail.length-1;i>=0;i--){
+    const t=trail[i]; t.x+=t.vx; t.y+=t.vy; t.life-=0.07;
+    if(t.life<=0) trail.splice(i,1);
+  }
+  if(isMobile && trail.length>12) trail.length=12;
+}
+function drawTrail(){
+  for(const t of trail){
+    ctx.globalAlpha=t.life*0.65;
+    ctx.fillStyle=t.c;
+    const sz=Math.max(1,Math.round(t.r*t.life));
+    ctx.fillRect(Math.round(t.x-sz/2),Math.round(t.y-sz/2),sz,sz);
+  }
+  ctx.globalAlpha=1;
+}
+
 /* ── PARTICLES ───────────────────────────────────────────────── */
 function drawParts(){
   for(const p of [...parts,...magic]){
@@ -1090,6 +1172,35 @@ function drawFlash(){
     ctx.fillRect(0,0,LW,LH);
     flash=Math.max(0,flash-.06);
   }
+}
+function drawCloseCallFlash(){
+  if(closeCallFlash<=0) return;
+  ctx.strokeStyle=`rgba(255,210,0,${closeCallFlash*0.75})`;
+  ctx.lineWidth=8; ctx.strokeRect(4,4,LW-8,LH-8);
+}
+function drawMilestonePop(){
+  if(milestoneTtl<=0) return;
+  const a=milestoneTtl<0.25?milestoneTtl/0.25:1;
+  const py=Math.round(LH/2-60-18*(1-milestoneTtl));
+  ctx.save(); ctx.globalAlpha=a;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 40px Georgia';
+  ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.lineWidth=6;
+  ctx.strokeText(milestoneText,LW/2,py);
+  ctx.fillStyle='#fbbf24'; ctx.fillText(milestoneText,LW/2,py);
+  ctx.restore();
+}
+function drawBiomeAnn(){
+  if(biomeAnnTtl<=0) return;
+  const a=biomeAnnTtl>0.85?(1-biomeAnnTtl)*6.7:biomeAnnTtl<0.2?biomeAnnTtl*5:1;
+  const py=Math.round(LH/2-biomeAnnTtl*35);
+  ctx.save(); ctx.globalAlpha=Math.min(1,a)*0.92;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 18px Georgia';
+  ctx.strokeStyle='rgba(0,0,0,0.75)'; ctx.lineWidth=5;
+  ctx.strokeText('— '+biomeAnnName+' —',LW/2,py);
+  ctx.fillStyle='#c4b5fd'; ctx.fillText('— '+biomeAnnName+' —',LW/2,py);
+  ctx.restore();
 }
 
 /* ── IDLE ────────────────────────────────────────────────────── */
@@ -1159,6 +1270,7 @@ function drawStart(now){
 /* ── GAME OVER ───────────────────────────────────────────────── */
 function drawDead(){
   const cy=LH/2-8;
+  ctx.fillStyle='rgba(0,0,0,0.48)'; ctx.fillRect(0,0,LW,LH);
   panel(LW/2,cy,348,375);
   ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.font='bold 42px Georgia'; ctx.strokeStyle='#7f0000'; ctx.lineWidth=5;
@@ -1210,7 +1322,14 @@ function drawLoading(){
 /* ── MAIN LOOP ───────────────────────────────────────────────── */
 function loop(now){
   requestAnimationFrame(loop);
+  ctx.setTransform(scale,0,0,scale,0,0);
   ctx.clearRect(0,0,LW,LH);
+  if(shakeAmt>0){
+    const sx=Math.round((Math.random()-.5)*shakeAmt*2.2);
+    const sy=Math.round((Math.random()-.5)*shakeAmt*1.8);
+    ctx.setTransform(scale,0,0,scale,sx*scale,sy*scale);
+    shakeAmt=Math.max(0,shakeAmt-0.55);
+  }
 
   if(imgsLoaded < imgsTotal){ drawLoading(); return; }
 
@@ -1232,29 +1351,30 @@ function loop(now){
     idleBird(now); updateParts();
     drawGround(); drawParts(); drawBird(); drawStart(now); drawMuteBtn();
   } else if(state===S.PLAY){
-    updateBird(); updatePipes(now); updateGround(); updateParts();
-    drawPipes(); drawGround(); drawParts(); drawBird(); drawScore(); drawFlash();
+    updateBird(); updatePipes(now); updateGround(); updateParts(); spawnTrail(); updateTrail();
+    drawPipes(); drawGround(); drawParts(); drawTrail(); drawBird(); drawScore(); drawFlash(); drawCloseCallFlash(); drawMilestonePop(); drawBiomeAnn();
     if(collides()) die();
   } else {
-    updateGround(); updateParts();
-    drawPipes(); drawGround(); drawParts(); drawBird(); drawScore(); drawFlash(); drawDead();
+    updateGround(); updateParts(); updateTrail();
+    drawPipes(); drawGround(); drawParts(); drawTrail(); drawBird(); drawScore(); drawFlash(); drawDead();
   }
 }
 
 /* ── GAME EVENTS ─────────────────────────────────────────────── */
 function die(){
-  state=S.DEAD; flash=1; best=Math.max(best,score);
+  state=S.DEAD; flash=1; shakeAmt=9; best=Math.max(best,score);
   localStorage.setItem('gauntlet_best',best);
   if(curTrack>=0){ fadeAudio(TRACKS[curTrack],0,0.06); setTimeout(()=>TRACKS[curTrack].pause(),700); }
   fadeAudio(FOREST_AMB,0,0.05); setTimeout(()=>FOREST_AMB.pause(),700);
   curTrack=-1;
   playGameOver();
-  spawnDeath(); bird.vy=0; bird.angle=75;
+  spawnDeath(); bird.vy=0; bird.angle=75; trail=[];
 }
 function go(){
   playClick();
   score=0; state=S.PLAY; held=false; biome=0; fadeAlpha=0;
-  embers=[]; parts=[]; magic=[];
+  embers=[]; parts=[]; magic=[]; trail=[];
+  shakeAmt=0; milestoneTtl=0; biomeAnnTtl=0; closeCallFlash=0;
   lastPipe=performance.now()-(BASE_INTERVAL-950);
   stopMenuMusic(); stopGameOver();
   crossfadeTrack(0);
