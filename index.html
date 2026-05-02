@@ -108,13 +108,23 @@ function pipeGap(s)  { return BASE_GAP-(BASE_GAP-MIN_GAP)*Math.min(s/70,1); }
 function pipeInt(s)  { return BASE_INTERVAL-(BASE_INTERVAL-MIN_INTERVAL)*Math.min(s/70,1); }
 
 /* ── AUDIO ───────────────────────────────────────────────────── */
-const TRACK_SRCS=['music/forest_music.ogg','music/dark_forest.mp3','music/dungeon.ogg','music/lava.ogg','music/hell.mp3'];
+// Format detection — iOS/Safari does not support OGG Vorbis
+const _canOgg=new Audio().canPlayType('audio/ogg')!=='';
+// iOS + iPadOS require play() on each element during a user gesture
+// (Chrome/Firefox use page-level activation after the first interaction)
+const _isiOS=/iP(hone|ad|od)/.test(navigator.userAgent)||
+             (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+// Fall back to .mp3 on browsers that can't play OGG
+// (supply foo.mp3 alongside foo.ogg to enable iOS playback)
+function _src(b,e){ return (e==='.ogg'&&!_canOgg)?b+'.mp3':b+e; }
+const TRACK_SRCS=[_src('music/forest_music','.ogg'),'music/dark_forest.mp3',
+                  _src('music/dungeon','.ogg'),_src('music/lava','.ogg'),'music/hell.mp3'];
 const TRACKS=TRACK_SRCS.map(src=>{ const a=new Audio(src); a.loop=true; a.volume=0; return a; });
 let curTrack=-1, audioUnlocked=false, muted=false;
 const MUTE_VOL=0.65, AMBIENT_VOL=0.45;
 const FOREST_AMB=new Audio('music/forest.mp3'); FOREST_AMB.loop=true; FOREST_AMB.volume=0;
-const MENU_MUS=new Audio('music/menu.ogg'); MENU_MUS.loop=true; MENU_MUS.volume=0;
-const OVER_MUS=new Audio('music/gameover.ogg'); OVER_MUS.loop=false; OVER_MUS.volume=0;
+const MENU_MUS=new Audio(_src('music/menu','.ogg')); MENU_MUS.loop=true; MENU_MUS.volume=0;
+const OVER_MUS=new Audio(_src('music/gameover','.ogg')); OVER_MUS.loop=false; OVER_MUS.volume=0;
 const _fadeIds=new WeakMap(); const _pauseIds=new WeakMap(); let _xfTimer=null;
 
 /* ── SFX (Web Audio API — synthesized, no files needed) ─────── */
@@ -187,18 +197,20 @@ function playMilestone(){
 }
 function unlockAudio(){
   if(audioUnlocked) return; audioUnlocked=true; getSfx();
-  // iOS: each element must have play() called in a user gesture.
-  // Play silently then pause after 50ms so they stay dormant until needed.
-  [...TRACKS, OVER_MUS].forEach(a=>{ a.play().catch(()=>{}); schedulePause(a,50); });
-  MENU_MUS.play().catch(()=>{});
+  // iOS/iPadOS requires play() on each element during the user gesture.
+  // Other browsers (Chrome, Firefox) use page-level activation after first click,
+  // so pre-unlocking all elements there causes unwanted simultaneous streams.
+  if(_isiOS) [...TRACKS,OVER_MUS].forEach(a=>{ const p=a.play();if(p)p.catch(()=>{}); schedulePause(a,50); });
+  const p=MENU_MUS.play(); if(p) p.catch(()=>{});
   if(!muted) fadeAudio(MENU_MUS,MUTE_VOL*0.75,0.02);
 }
 function stopMenuMusic(){ fadeAudio(MENU_MUS,0,0.06); schedulePause(MENU_MUS,600); }
 function playGameOver(){
-  OVER_MUS.currentTime=0; cancelPause(OVER_MUS); OVER_MUS.play().catch(()=>{});
+  OVER_MUS.currentTime=0; cancelPause(OVER_MUS);
+  const p=OVER_MUS.play(); if(p) p.catch(()=>{});
   if(!muted) fadeAudio(OVER_MUS,MUTE_VOL,0.03);
 }
-function stopGameOver(){ fadeAudio(OVER_MUS,0,0.07); schedulePause(OVER_MUS,500); }
+function stopGameOver(){ fadeAudio(OVER_MUS,0,0.10); schedulePause(OVER_MUS,400); }
 function toggleMute(){
   muted=!muted;
   TRACKS.forEach(t=>{ t.volume=muted?0:(t===TRACKS[curTrack]?MUTE_VOL:0); });
@@ -222,13 +234,19 @@ function schedulePause(a,delay){
 function cancelPause(a){ if(_pauseIds.has(a)){ clearTimeout(_pauseIds.get(a)); _pauseIds.delete(a); } }
 function crossfadeTrack(idx){
   if(idx===curTrack) return;
-  const prev=curTrack; curTrack=idx;
-  TRACKS.forEach((t,i)=>{ if(i!==idx){ fadeAudio(t,0,0.07); schedulePause(t,650); } });
+  curTrack=idx;
+  // Fade out all non-target tracks quickly (step=0.10 → ~325ms from MUTE_VOL to silence)
+  TRACKS.forEach((t,i)=>{ if(i!==idx){ fadeAudio(t,0,0.10); schedulePause(t,400); } });
   if(_xfTimer){ clearTimeout(_xfTimer); _xfTimer=null; }
   const n=TRACKS[idx];
-  _xfTimer=setTimeout(()=>{ _xfTimer=null; cancelPause(n); n.play().catch(()=>{}); if(!muted) fadeAudio(n,MUTE_VOL,0.03); },400);
-  if(idx===0){ cancelPause(FOREST_AMB); FOREST_AMB.play().catch(()=>{}); if(!muted) fadeAudio(FOREST_AMB,AMBIENT_VOL,0.02); }
-  else { fadeAudio(FOREST_AMB,0,0.04); schedulePause(FOREST_AMB,800); }
+  // Play synchronously at vol=0 — this call is in the user-gesture stack on first start
+  // (go() → crossfadeTrack), satisfying Chrome and iOS autoplay requirements.
+  // For mid-game biome changes, page activation from the first gesture covers it.
+  cancelPause(n); n.currentTime=0; const np=n.play(); if(np) np.catch(()=>{});
+  // Fade-in starts at 400ms — after non-target tracks are fully silent (~325ms)
+  if(!muted) _xfTimer=setTimeout(()=>{ _xfTimer=null; fadeAudio(n,MUTE_VOL,0.03); },400);
+  if(idx===0){ cancelPause(FOREST_AMB); const fp=FOREST_AMB.play();if(fp)fp.catch(()=>{}); if(!muted) fadeAudio(FOREST_AMB,AMBIENT_VOL,0.02); }
+  else { fadeAudio(FOREST_AMB,0,0.08); schedulePause(FOREST_AMB,450); }
 }
 
 /* ── STATE ───────────────────────────────────────────────────── */
@@ -1488,8 +1506,8 @@ function die(){
   state=S.DEAD; flash=1; shakeAmt=9; best=Math.max(best,score);
   localStorage.setItem('gauntlet_best',best);
   if(_xfTimer){ clearTimeout(_xfTimer); _xfTimer=null; }
-  TRACKS.forEach(t=>{ fadeAudio(t,0,0.06); schedulePause(t,700); });
-  fadeAudio(FOREST_AMB,0,0.05); schedulePause(FOREST_AMB,700);
+  TRACKS.forEach(t=>{ fadeAudio(t,0,0.10); schedulePause(t,400); });
+  fadeAudio(FOREST_AMB,0,0.10); schedulePause(FOREST_AMB,400);
   curTrack=-1;
   playGameOver();
   spawnDeath(); bird.vy=0; bird.angle=75; trail=[];
@@ -1532,6 +1550,18 @@ canvas.addEventListener('pointerdown',e=>{
 });
 canvas.addEventListener('pointerup',()=>held=false);
 canvas.addEventListener('pointerleave',()=>held=false);
+
+// Resume audio after tab switch / app switch (mobile browser and desktop)
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden||!audioUnlocked) return;
+  if(sfxCtx&&sfxCtx.state==='suspended') sfxCtx.resume().catch(()=>{});
+  if(state===S.PLAY&&curTrack>=0){
+    const t=TRACKS[curTrack]; if(t.paused){const p=t.play();if(p)p.catch(()=>{});}
+    if(curTrack===0&&FOREST_AMB.paused){const p=FOREST_AMB.play();if(p)p.catch(()=>{});}
+  }
+  if(state===S.START&&MENU_MUS.paused){const p=MENU_MUS.play();if(p)p.catch(()=>{});}
+  if(state===S.DEAD&&OVER_MUS.paused){const p=OVER_MUS.play();if(p)p.catch(()=>{});}
+});
 
 requestAnimationFrame(loop);
 })();
