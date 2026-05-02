@@ -187,7 +187,9 @@ function playMilestone(){
 }
 function unlockAudio(){
   if(audioUnlocked) return; audioUnlocked=true; getSfx();
-  MENU_MUS.play().catch(()=>{});
+  // iOS requires play() to be called on each element during a user gesture
+  // before it can be triggered from async contexts like setTimeout
+  [...TRACKS, FOREST_AMB, OVER_MUS, MENU_MUS].forEach(a=>a.play().catch(()=>{}));
   if(!muted) fadeAudio(MENU_MUS,MUTE_VOL*0.75,0.02);
 }
 function stopMenuMusic(){ fadeAudio(MENU_MUS,0,0.06); schedulePause(MENU_MUS,600); }
