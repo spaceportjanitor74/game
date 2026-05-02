@@ -187,14 +187,15 @@ function playMilestone(){
 }
 function unlockAudio(){
   if(audioUnlocked) return; audioUnlocked=true; getSfx();
-  // iOS requires play() to be called on each element during a user gesture
-  // before it can be triggered from async contexts like setTimeout
-  [...TRACKS, FOREST_AMB, OVER_MUS, MENU_MUS].forEach(a=>a.play().catch(()=>{}));
+  // iOS: each element must have play() called in a user gesture.
+  // Play silently then pause after 50ms so they stay dormant until needed.
+  [...TRACKS, OVER_MUS].forEach(a=>{ a.play().catch(()=>{}); schedulePause(a,50); });
+  MENU_MUS.play().catch(()=>{});
   if(!muted) fadeAudio(MENU_MUS,MUTE_VOL*0.75,0.02);
 }
 function stopMenuMusic(){ fadeAudio(MENU_MUS,0,0.06); schedulePause(MENU_MUS,600); }
 function playGameOver(){
-  OVER_MUS.currentTime=0; OVER_MUS.play().catch(()=>{});
+  OVER_MUS.currentTime=0; cancelPause(OVER_MUS); OVER_MUS.play().catch(()=>{});
   if(!muted) fadeAudio(OVER_MUS,MUTE_VOL,0.03);
 }
 function stopGameOver(){ fadeAudio(OVER_MUS,0,0.07); schedulePause(OVER_MUS,500); }
@@ -222,7 +223,7 @@ function cancelPause(a){ if(_pauseIds.has(a)){ clearTimeout(_pauseIds.get(a)); _
 function crossfadeTrack(idx){
   if(idx===curTrack) return;
   const prev=curTrack; curTrack=idx;
-  if(prev>=0){ const t=TRACKS[prev]; fadeAudio(t,0,0.07); schedulePause(t,650); }
+  TRACKS.forEach((t,i)=>{ if(i!==idx){ fadeAudio(t,0,0.07); schedulePause(t,650); } });
   if(_xfTimer){ clearTimeout(_xfTimer); _xfTimer=null; }
   const n=TRACKS[idx];
   _xfTimer=setTimeout(()=>{ _xfTimer=null; cancelPause(n); n.play().catch(()=>{}); if(!muted) fadeAudio(n,MUTE_VOL,0.03); },400);
@@ -1487,7 +1488,7 @@ function die(){
   state=S.DEAD; flash=1; shakeAmt=9; best=Math.max(best,score);
   localStorage.setItem('gauntlet_best',best);
   if(_xfTimer){ clearTimeout(_xfTimer); _xfTimer=null; }
-  if(curTrack>=0){ const pt=TRACKS[curTrack]; fadeAudio(pt,0,0.06); schedulePause(pt,700); }
+  TRACKS.forEach(t=>{ fadeAudio(t,0,0.06); schedulePause(t,700); });
   fadeAudio(FOREST_AMB,0,0.05); schedulePause(FOREST_AMB,700);
   curTrack=-1;
   playGameOver();
