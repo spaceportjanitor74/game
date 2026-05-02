@@ -10,6 +10,8 @@
 
 ## Music (all CC0)
 
+- **Menu / Title screen**: "Menu Music" by wipics — CC0 Public Domain — opengameart.org
+- **Game Over**: "Game Over" by Kistol — CC0 Public Domain — opengameart.org
 - **Sunlit Forest**: "Beautiful Forest [Orchestra]" by nene + "Forest Ambience" (ambient layer) — opengameart.org
 - **Dark Forest**: "Spooky Dungeon" by Memoraphile — opengameart.org
 - **Mossy Fortress**: "Loopable Dungeon Ambience" — opengameart.org
