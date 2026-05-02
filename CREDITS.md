@@ -13,7 +13,7 @@
 - **Menu / Title screen**: "Menu Music" by wipics — CC0 Public Domain — opengameart.org
 - **Game Over**: "Game Over" by Kistol — CC0 Public Domain — opengameart.org
 - **Sunlit Forest**: "Beautiful Forest [Orchestra]" by nene + "Forest Ambience" (ambient layer) — opengameart.org
-- **Dark Forest**: "Spooky Dungeon" by Memoraphile — opengameart.org
+- **Dark Forest**: "Dark Forest Theme" by cynicmusic (The Cynic Project) — CC0 Public Domain — opengameart.org
 - **Mossy Fortress**: "Loopable Dungeon Ambience" — opengameart.org
 - **Lava Cavern**: "Heavy Dungeon" — opengameart.org
 - **Volcanic Hellscape**: "Lava Dungeon Battle" — opengameart.org

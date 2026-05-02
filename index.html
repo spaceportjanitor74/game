@@ -108,7 +108,7 @@ function pipeGap(s)  { return BASE_GAP-(BASE_GAP-MIN_GAP)*Math.min(s/70,1); }
 function pipeInt(s)  { return BASE_INTERVAL-(BASE_INTERVAL-MIN_INTERVAL)*Math.min(s/70,1); }
 
 /* ── AUDIO ───────────────────────────────────────────────────── */
-const TRACK_SRCS=['music/forest_music.ogg','music/dark_forest.ogg','music/dungeon.ogg','music/lava.ogg','music/hell.mp3'];
+const TRACK_SRCS=['music/forest_music.ogg','music/dark_forest.mp3','music/dungeon.ogg','music/lava.ogg','music/hell.mp3'];
 const TRACKS=TRACK_SRCS.map(src=>{ const a=new Audio(src); a.loop=true; a.volume=0; return a; });
 let curTrack=-1, audioUnlocked=false, muted=false;
 const MUTE_VOL=0.65, AMBIENT_VOL=0.45;
