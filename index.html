@@ -381,6 +381,26 @@ function drawEmberLayer(){
   ctx.globalAlpha=1;
 }
 
+/* ── CRAGGY MOUNTAIN HELPER ──────────────────────────────────── */
+// Deterministic jagged silhouette using sin harmonics — no flickering
+function drawCraggyMtn(x,baseY,w,h,col,seed){
+  ctx.fillStyle=col;
+  ctx.beginPath();
+  ctx.moveTo(x-5,baseY+6);
+  const N=18;
+  for(let s=0;s<=N;s++){
+    const t=s/N, px=x+t*w;
+    const bell=4*t*(1-t);
+    const jag=Math.sin(t*8.3+seed)*0.18
+             +Math.sin(t*17.1+seed*1.6)*0.09
+             +Math.sin(t*29.3+seed*0.8)*0.04;
+    ctx.lineTo(Math.round(px), Math.round(baseY-h*(bell*(0.88+jag))));
+  }
+  ctx.lineTo(x+w+5,baseY+6);
+  ctx.closePath();
+  ctx.fill();
+}
+
 /* ── BACKGROUNDS ─────────────────────────────────────────────── */
 function drawBG0(){
   // Sunlit Forest — 7 pixel-art layers, CC0
@@ -408,6 +428,35 @@ function drawBG1(){
   ctx.fillStyle='rgba(8,12,20,0.62)';
   ctx.fillRect(0,0,LW,LH-GROUND_H);
   ctx.globalCompositeOperation='source-over';
+  // Dead tree canopy — bare trunks and branches hanging from ceiling
+  ctx.save();
+  ctx.fillStyle='#0b1219'; ctx.globalAlpha=0.80;
+  const cOff1=(worldX*0.22)%115;
+  for(let i=0;i<6;i++){
+    const px=Math.round(((i*115-cOff1+690)%(LW+115))-30);
+    const h=28+i%3*10, vr=i%3;
+    ctx.fillRect(px-2,0,4,h);
+    const lb=14+vr*5;
+    ctx.fillRect(px-lb,Math.round(h*0.42),lb,2);
+    ctx.fillRect(px-lb,Math.round(h*0.30),Math.round(lb*0.55),2);
+    const rb=11+vr*4;
+    ctx.fillRect(px,Math.round(h*0.62),rb,2);
+    ctx.fillRect(px+Math.round(rb*0.55),Math.round(h*0.73),Math.round(rb*0.55),2);
+  }
+  ctx.fillStyle='#080f16'; ctx.globalAlpha=0.90;
+  const cOff2=(worldX*0.42)%90;
+  for(let i=0;i<8;i++){
+    const px=Math.round(((i*90-cOff2+720)%(LW+90))-30);
+    const h=40+i%2*18, vr=i%3;
+    ctx.fillRect(px-3,0,6,h);
+    const lb=20+vr*6;
+    ctx.fillRect(px-lb,Math.round(h*0.40),lb,3);
+    ctx.fillRect(px-lb,Math.round(h*0.27),Math.round(lb*0.60),2);
+    const rb=16+vr*5;
+    ctx.fillRect(px,Math.round(h*0.58),rb,3);
+    ctx.fillRect(px+Math.round(rb*0.55),Math.round(h*0.70),Math.round(rb*0.55),2);
+  }
+  ctx.restore();
   // Moon — pale disc in upper-left sky
   const moonX=60, moonY=55;
   ctx.fillStyle='rgba(200,210,230,0.22)';
@@ -537,19 +586,47 @@ function drawBG3(){
 }
 
 function drawBG4(){
-  // Volcanic Hellscape — 6-layer volcano pack, CC0
-  // Deepest layers: near-static sky/horizon; nearest: fast-moving lava foreground
-  drawBGLayer(IMGS.b4_1, 0.04); // distant sky
-  drawBGLayer(IMGS.b4_2, 0.10);
-  drawBGLayer(IMGS.b4_3, 0.22);
-  drawBGLayer(IMGS.b4_4, 0.40);
-  drawBGLayer(IMGS.b4_5, 0.62);
-  drawBGLayer(IMGS.b4_6, 0.85); // near foreground rocks/lava
-  // Mild red tint to unify the palette
-  ctx.globalCompositeOperation='multiply';
-  ctx.fillStyle='rgba(255,30,0,0.25)';
-  ctx.fillRect(0,0,LW,LH-GROUND_H);
-  ctx.globalCompositeOperation='source-over';
+  // Volcanic Hellscape — procedural craggy mountains + lava glow
+  const skyH=LH-GROUND_H;
+  // Dark sky: near-black at top → deep crimson at horizon
+  const sky=ctx.createLinearGradient(0,0,0,skyH);
+  sky.addColorStop(0,'#060002'); sky.addColorStop(0.55,'#150005'); sky.addColorStop(1,'#3d0008');
+  ctx.fillStyle=sky; ctx.fillRect(0,0,LW,skyH);
+  // Lava horizon glow
+  const hg=ctx.createLinearGradient(0,skyH-80,0,skyH);
+  hg.addColorStop(0,'rgba(255,50,0,0)'); hg.addColorStop(0.65,'rgba(255,80,0,0.35)');
+  hg.addColorStop(1,'rgba(255,120,10,0.70)');
+  ctx.fillStyle=hg; ctx.fillRect(0,skyH-80,LW,80);
+  // Distant mountains — tallest, slowest, darkest
+  const dm=(worldX*0.07)%330;
+  for(let i=-1;i<Math.ceil(LW/330)+2;i++)
+    drawCraggyMtn(i*330-dm,skyH,330,160,'#0d0101',i*3.7);
+  // Mid mountains — lava seam cracks
+  const mm=(worldX*0.17)%235;
+  ctx.save();
+  ctx.lineWidth=1.5;
+  for(let i=-1;i<Math.ceil(LW/235)+2;i++){
+    const mx=i*235-mm;
+    drawCraggyMtn(mx,skyH,235,118,'#1c0303',i*5.2+1.3);
+    ctx.strokeStyle=`rgba(255,70,0,${(0.35+0.2*Math.sin(torchPhase+i)).toFixed(2)})`;
+    const cx1=Math.round(mx+235*0.43), cy1=Math.round(skyH-118*0.52);
+    ctx.beginPath(); ctx.moveTo(cx1,cy1); ctx.lineTo(cx1+4,cy1+18); ctx.lineTo(cx1-2,cy1+36); ctx.stroke();
+  }
+  ctx.restore();
+  // Near mountains — two cracks each
+  const nm=(worldX*0.34)%185;
+  ctx.save();
+  ctx.lineWidth=1;
+  for(let i=-1;i<Math.ceil(LW/185)+2;i++){
+    const mx=i*185-nm;
+    drawCraggyMtn(mx,skyH,185,82,'#260505',i*7.1+2.6);
+    ctx.strokeStyle=`rgba(255,90,0,${(0.40+0.25*Math.sin(torchPhase*1.3+i*0.8)).toFixed(2)})`;
+    const cx2=Math.round(mx+185*0.38), cy2=Math.round(skyH-82*0.55);
+    ctx.beginPath(); ctx.moveTo(cx2,cy2); ctx.lineTo(cx2-3,cy2+16); ctx.lineTo(cx2+2,cy2+28); ctx.stroke();
+    const cx3=Math.round(mx+185*0.60), cy3=Math.round(skyH-82*0.46);
+    ctx.beginPath(); ctx.moveTo(cx3,cy3); ctx.lineTo(cx3+4,cy3+14); ctx.lineTo(cx3-1,cy3+25); ctx.stroke();
+  }
+  ctx.restore();
   // Floor heat glow
   const flg=ctx.createLinearGradient(0,LH-GROUND_H-120,0,LH-GROUND_H);
   flg.addColorStop(0,'rgba(255,60,0,0)'); flg.addColorStop(1,'rgba(255,100,0,0.55)');
