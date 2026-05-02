@@ -401,8 +401,6 @@ function drawBG2(){
     ctx.fillRect(Math.round(mx+22), 0, 4, Math.round(mh*0.55));
     ctx.fillRect(Math.round(mx+48), 0, 5, Math.round(mh*0.75));
   }
-  // Green-amber torches for mossy stone feel
-  drawTorches('#c8c040');
   // Ground moss glow
   const mg=ctx.createLinearGradient(0,LH-GROUND_H-45,0,LH-GROUND_H);
   mg.addColorStop(0,'rgba(30,65,12,0)'); mg.addColorStop(1,'rgba(30,65,12,0.38)');
@@ -430,7 +428,6 @@ function drawBG3(){
   const lg=ctx.createLinearGradient(0,LH-GROUND_H-130,0,LH-GROUND_H);
   lg.addColorStop(0,'rgba(255,60,0,0)'); lg.addColorStop(1,'rgba(255,90,0,0.50)');
   ctx.fillStyle=lg; ctx.fillRect(0,LH-GROUND_H-130,LW,130);
-  drawTorches('#ff6600');
   spawnEmber(false); drawEmberLayer();
 }
 
