@@ -149,22 +149,26 @@ function crossfadeTrack(idx){
 
 /* ── STATE ───────────────────────────────────────────────────── */
 const S = {START:0,PLAY:1,DEAD:2};
-let state=S.START, score=0, best=0, biome=0, fadeAlpha=0, curSpeed=BASE_SPEED;
+let state=S.START, score=0, best=parseInt(localStorage.getItem('gauntlet_best')||'0',10), biome=0, fadeAlpha=0, curSpeed=BASE_SPEED;
 let worldX = 0;
 
-/* ── BIRD COLORS PER BIOME ───────────────────────────────────── */
-const BC = [
-  {body:'#0ea5e9',hi:'#7dd3fc',dark:'#0369a1',wing:'#0284c7',whi:'#38bdf8',
-   tail:'#22d3ee',thi:'#a5f3fc',beak:'#fbbf24',eye:'#0c4a6e',crest:'#06b6d4',spark:'#7dd3fc'},
-  {body:'#9333ea',hi:'#d8b4fe',dark:'#6b21a8',wing:'#7c3aed',whi:'#c4b5fd',
-   tail:'#e879f9',thi:'#f0abfc',beak:'#a21caf',eye:'#2e1065',crest:'#c026d3',spark:'#e879f9'},
-  {body:'#64748b',hi:'#e2e8f0',dark:'#334155',wing:'#475569',whi:'#94a3b8',
-   tail:'#94a3b8',thi:'#f1f5f9',beak:'#64748b',eye:'#0f172a',crest:'#94a3b8',spark:'#cbd5e1'},
-  {body:'#f97316',hi:'#fed7aa',dark:'#c2410c',wing:'#ea580c',whi:'#fb923c',
-   tail:'#fcd34d',thi:'#fef9c3',beak:'#dc2626',eye:'#431407',crest:'#fbbf24',spark:'#fb923c'},
-  {body:'#dc2626',hi:'#fca5a5',dark:'#991b1b',wing:'#b91c1c',whi:'#f87171',
-   tail:'#fbbf24',thi:'#fef08a',beak:'#fbbf24',eye:'#450a0a',crest:'#ff6600',spark:'#fbbf24'},
+/* ── SELECTABLE CHARACTERS ───────────────────────────────────── */
+const CHARS = [
+  {name:'Phoenix',
+   body:'#c2410c',hi:'#fb923c',dark:'#7c2d12',wing:'#ea580c',whi:'#fed7aa',
+   tail:'#fcd34d',thi:'#fef9c3',beak:'#fbbf24',eye:'#431407',crest:'#f97316',spark:'#fcd34d'},
+  {name:'Shadow Raven',
+   body:'#312e81',hi:'#818cf8',dark:'#1e1b4b',wing:'#4338ca',whi:'#a5b4fc',
+   tail:'#6366f1',thi:'#e0e7ff',beak:'#c4b5fd',eye:'#0f0a1a',crest:'#7c3aed',spark:'#818cf8'},
+  {name:'Storm Hawk',
+   body:'#0284c7',hi:'#7dd3fc',dark:'#0369a1',wing:'#0ea5e9',whi:'#bae6fd',
+   tail:'#22d3ee',thi:'#cffafe',beak:'#fbbf24',eye:'#0c4a6e',crest:'#06b6d4',spark:'#7dd3fc'},
+  {name:'Forest Owl',
+   body:'#4d7c0f',hi:'#a3e635',dark:'#1a2e05',wing:'#3f6212',whi:'#84cc16',
+   tail:'#92400e',thi:'#fde68a',beak:'#d97706',eye:'#1a2e05',crest:'#65a30d',spark:'#a3e635'},
 ];
+let selectedChar = parseInt(localStorage.getItem('gauntlet_char')||'0',10);
+if(selectedChar<0||selectedChar>=CHARS.length) selectedChar=0;
 
 /* ── BIRD ────────────────────────────────────────────────────── */
 const bird = {x:BIRD_X,y:LH/2,vy:0,angle:0,wing:0};
@@ -222,7 +226,7 @@ let parts=[], magic=[], embers=[];
 let lavaPhase=0, torchPhase=0;
 
 function spawnDeath(){
-  const c=BC[biome], cols=[c.body,c.tail,c.hi,c.thi];
+  const c=CHARS[selectedChar], cols=[c.body,c.tail,c.hi,c.thi];
   for(let i=0;i<24;i++){
     const a=(Math.PI*2*i)/24+Math.random()*.4, sp=2+Math.random()*5;
     parts.push({x:bird.x,y:bird.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
@@ -230,7 +234,7 @@ function spawnDeath(){
   }
 }
 function spawnMagic(){
-  const col=BC[biome].spark;
+  const col=CHARS[selectedChar].spark;
   for(let i=0;i<7;i++){
     const a=Math.random()*Math.PI*2,sp=1+Math.random()*2.5;
     magic.push({x:bird.x-8,y:bird.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
@@ -539,32 +543,40 @@ function drawPipes(){
   }
 }
 /* ── PIPE LIGHT FIXTURES ─────────────────────────────────────── */
-// Hanging lantern on bottom face of top-pipe cap (flame into gap)
+// Lantern bolted to the bottom face of the top-pipe cap (hangs down into gap)
 function drawCapLantern(tx,ty,fc,gc){
   const fl=0.72+0.28*Math.sin(torchPhase);
-  ctx.fillStyle='#2e2a24'; ctx.fillRect(tx-1,ty,2,5);        // chain
-  ctx.fillStyle='#403b33'; ctx.fillRect(tx-6,ty+4,12,3);     // lantern top
-  ctx.fillStyle='#4a4438'; ctx.fillRect(tx-5,ty+7,10,9);     // lantern body
-  ctx.fillStyle='#2e2a24'; ctx.fillRect(tx-6,ty+16,12,2);    // lantern base
-  const g=ctx.createRadialGradient(tx,ty+12,0,tx,ty+12,22*fl);
+  // Mounting bracket plate flush with cap stone face
+  ctx.fillStyle='#5a4a35'; ctx.fillRect(tx-10,ty,20,3);
+  ctx.fillStyle='#2e2824'; ctx.fillRect(tx-8,ty+1,2,2); ctx.fillRect(tx+6,ty+1,2,2);
+  // Chain link from bracket center
+  ctx.fillStyle='#2e2a24'; ctx.fillRect(tx-1,ty+3,2,5);
+  ctx.fillStyle='#403b33'; ctx.fillRect(tx-6,ty+7,12,3);  // lantern top
+  ctx.fillStyle='#4a4438'; ctx.fillRect(tx-5,ty+10,10,8); // lantern body
+  ctx.fillStyle='#2e2a24'; ctx.fillRect(tx-6,ty+18,12,2); // lantern base
+  const g=ctx.createRadialGradient(tx,ty+14,0,tx,ty+14,20*fl);
   g.addColorStop(0,gc); g.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(tx,ty+12,24*fl,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(tx,ty+14,22*fl,0,Math.PI*2); ctx.fill();
   ctx.globalAlpha=fl;
-  ctx.fillStyle=fc; ctx.fillRect(tx-2,ty+8,4,6); ctx.fillRect(tx-1,ty+7,2,3);
-  ctx.fillStyle='#fefce8'; ctx.fillRect(tx-1,ty+9,2,3);
+  ctx.fillStyle=fc; ctx.fillRect(tx-2,ty+11,4,6); ctx.fillRect(tx-1,ty+10,2,3);
+  ctx.fillStyle='#fefce8'; ctx.fillRect(tx-1,ty+12,2,3);
   ctx.globalAlpha=1;
 }
-// Wall torch on top face of bottom-pipe cap (flame up into gap)
+// Torch bolted to the top face of the bottom-pipe cap (flame up into gap)
 function drawCapTorch(tx,ty,fc,gc){
   const fl=0.72+0.28*Math.sin(torchPhase+0.7);
-  ctx.fillStyle='#2e2a24'; ctx.fillRect(tx-2,ty-9,4,9);      // post
-  ctx.fillStyle='#403b33'; ctx.fillRect(tx-4,ty-11,8,4);     // cup
-  const g=ctx.createRadialGradient(tx,ty-15,0,tx,ty-15,20*fl);
+  // Mounting bracket plate flush with cap stone face
+  ctx.fillStyle='#5a4a35'; ctx.fillRect(tx-10,ty-3,20,3);
+  ctx.fillStyle='#2e2824'; ctx.fillRect(tx-8,ty-2,2,2); ctx.fillRect(tx+6,ty-2,2,2);
+  // Post rising from bracket
+  ctx.fillStyle='#2e2a24'; ctx.fillRect(tx-2,ty-11,4,8);
+  ctx.fillStyle='#403b33'; ctx.fillRect(tx-4,ty-13,8,4); // cup
+  const g=ctx.createRadialGradient(tx,ty-17,0,tx,ty-17,18*fl);
   g.addColorStop(0,gc); g.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(tx,ty-15,22*fl,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(tx,ty-17,20*fl,0,Math.PI*2); ctx.fill();
   ctx.globalAlpha=fl;
-  ctx.fillStyle=fc; ctx.fillRect(tx-2,ty-21,4,8); ctx.fillRect(tx-1,ty-25,2,6);
-  ctx.fillStyle='#fefce8'; ctx.fillRect(tx-1,ty-23,2,4);
+  ctx.fillStyle=fc; ctx.fillRect(tx-2,ty-23,4,8); ctx.fillRect(tx-1,ty-27,2,6);
+  ctx.fillStyle='#fefce8'; ctx.fillRect(tx-1,ty-25,2,4);
   ctx.globalAlpha=1;
 }
 
@@ -682,7 +694,7 @@ function pillarFlames(x,w,cO,y,up){
 
 /* ── BIRD DRAW (pixel art) ───────────────────────────────────── */
 function drawBird(){
-  const c=BC[biome];
+  const c=CHARS[selectedChar];
   ctx.save();
   ctx.translate(bird.x,bird.y);
   ctx.rotate(bird.angle*Math.PI/180);
@@ -744,6 +756,43 @@ function drawBird(){
   ctx.fillRect(22,-8,10,2);   // beak highlight
 
   ctx.restore();
+}
+
+/* ── MINI CHARACTER PORTRAIT ─────────────────────────────────── */
+function drawMiniChar(cx,cy,charIdx,selected){
+  const c=CHARS[charIdx];
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.scale(0.5,0.5);
+  ctx.fillStyle=c.thi;  ctx.fillRect(-26,-6,14,4);
+  ctx.fillStyle=c.tail; ctx.fillRect(-24,-2,16,4);
+  ctx.fillStyle=c.thi;  ctx.fillRect(-26,2,14,4);
+  ctx.fillStyle=c.wing; ctx.fillRect(-8,-12,20,8);
+  ctx.fillStyle=c.whi;  ctx.fillRect(-6,-12,16,4);
+  ctx.fillStyle=c.body; ctx.fillRect(-10,-8,20,16);
+  ctx.fillStyle=c.hi;   ctx.fillRect(-8,-8,16,4);
+  ctx.fillStyle=c.dark; ctx.fillRect(-10,6,20,2);
+  ctx.fillStyle=c.body; ctx.fillRect(8,-14,14,14);
+  ctx.fillStyle=c.hi;   ctx.fillRect(8,-14,14,4);
+  ctx.fillStyle=c.crest; ctx.fillRect(10,-20,4,8); ctx.fillRect(14,-18,4,6); ctx.fillRect(18,-15,4,4);
+  ctx.fillStyle='#ffffff'; ctx.fillRect(16,-10,8,6);
+  ctx.fillStyle=c.eye;    ctx.fillRect(18,-10,4,4);
+  ctx.fillStyle='#ffffff'; ctx.fillRect(20,-10,2,2);
+  ctx.fillStyle=c.beak; ctx.fillRect(22,-8,10,4); ctx.fillRect(22,-4,8,4);
+  ctx.restore();
+  if(selected){
+    ctx.strokeStyle='#fbbf24'; ctx.lineWidth=2;
+    rr(cx-17,cy-16,34,33,4); ctx.stroke();
+    ctx.strokeStyle='rgba(251,191,36,0.22)'; ctx.lineWidth=5;
+    rr(cx-19,cy-18,38,37,5); ctx.stroke();
+  } else {
+    ctx.strokeStyle='rgba(167,139,250,0.35)'; ctx.lineWidth=1;
+    rr(cx-17,cy-16,34,33,4); ctx.stroke();
+  }
+  ctx.font='9px Georgia';
+  ctx.fillStyle=selected?'#fbbf24':'#7c6a9a';
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillText(c.name,cx,cy+19);
 }
 
 /* ── PARTICLES ───────────────────────────────────────────────── */
@@ -829,26 +878,31 @@ function btn(cx,y,w,h,lbl,c1,c2){
 /* ── START SCREEN ────────────────────────────────────────────── */
 function drawStart(now){
   const pulse=0.7+0.3*Math.sin(now/500), cy=LH/2-8;
-  panel(LW/2,cy,348,352);
+  panel(LW/2,cy,348,375);
   ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.font='bold 34px Georgia'; ctx.strokeStyle='#1a0050'; ctx.lineWidth=5;
-  ctx.strokeText('⚔  THE GAUNTLET  ⚔',LW/2,cy-118);
-  const tg=ctx.createLinearGradient(0,cy-135,0,cy-100);
+  ctx.strokeText('⚔  THE GAUNTLET  ⚔',LW/2,cy-128);
+  const tg=ctx.createLinearGradient(0,cy-145,0,cy-110);
   tg.addColorStop(0,'#fbbf24'); tg.addColorStop(1,'#f59e0b');
-  ctx.fillStyle=tg; ctx.fillText('⚔  THE GAUNTLET  ⚔',LW/2,cy-118);
-  ctx.font='bold 16px Georgia'; ctx.fillStyle='#c4b5fd';
-  ctx.fillText('How far can you go?',LW/2,cy-88);
+  ctx.fillStyle=tg; ctx.fillText('⚔  THE GAUNTLET  ⚔',LW/2,cy-128);
+  ctx.font='bold 15px Georgia'; ctx.fillStyle='#c4b5fd';
+  ctx.fillText('How far can you go?',LW/2,cy-98);
   ctx.strokeStyle='rgba(167,139,250,.35)'; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.moveTo(LW/2-125,cy-70); ctx.lineTo(LW/2+125,cy-70); ctx.stroke();
-  ctx.font='13px Georgia'; ctx.fillStyle='#a78bfa';
-  ctx.fillText('Journey through 5 realms:',LW/2,cy-52);
+  ctx.beginPath(); ctx.moveTo(LW/2-125,cy-82); ctx.lineTo(LW/2+125,cy-82); ctx.stroke();
+  ctx.font='12px Georgia'; ctx.fillStyle='#a78bfa';
+  ctx.fillText('Journey through 5 realms:',LW/2,cy-66);
   ['🌲 Sunlit Forest','🌑 Dark Forest','🏰 Mossy Fortress','🌋 Lava Cavern','☠ Volcanic Hellscape']
-    .forEach((r,i)=>{ ctx.font='12px Georgia'; ctx.fillStyle='#7c3aed'; ctx.fillText(r,LW/2,cy-34+i*17); });
-  if(best>0){ ctx.font='15px Georgia'; ctx.fillStyle='#fbbf24'; ctx.fillText('Best: '+best+' pipes',LW/2,cy+68); }
-  ctx.font='14px Georgia'; ctx.fillStyle='#6b7280';
-  ctx.fillText('SPACE / Click / Tap to flap',LW/2,cy+90);
+    .forEach((r,i)=>{ ctx.font='11px Georgia'; ctx.fillStyle='#7c3aed'; ctx.fillText(r,LW/2,cy-51+i*14); });
+  ctx.strokeStyle='rgba(167,139,250,.25)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(LW/2-125,cy+22); ctx.lineTo(LW/2+125,cy+22); ctx.stroke();
+  ctx.font='bold 11px Georgia'; ctx.fillStyle='#a78bfa';
+  ctx.fillText('CHOOSE YOUR CHAMPION',LW/2,cy+35);
+  const charXs=[LW/2-90,LW/2-30,LW/2+30,LW/2+90];
+  for(let i=0;i<CHARS.length;i++) drawMiniChar(charXs[i],cy+62,i,i===selectedChar);
+  ctx.textBaseline='middle';
+  if(best>0){ ctx.font='14px Georgia'; ctx.fillStyle='#fbbf24'; ctx.fillText('Best: '+best+' pipes',LW/2,cy+100); }
   ctx.globalAlpha=pulse;
-  btn(LW/2,cy+113,224,52,'⚔  BEGIN QUEST','#7c3aed','#4c1d95');
+  btn(LW/2,cy+118,224,52,'⚔  BEGIN QUEST','#7c3aed','#4c1d95');
   ctx.globalAlpha=1;
 }
 
@@ -933,6 +987,7 @@ function loop(now){
 /* ── GAME EVENTS ─────────────────────────────────────────────── */
 function die(){
   state=S.DEAD; flash=1; best=Math.max(best,score);
+  localStorage.setItem('gauntlet_best',best);
   spawnDeath(); bird.vy=0; bird.angle=75;
 }
 function go(){
@@ -957,6 +1012,15 @@ canvas.addEventListener('pointerdown',e=>{
   e.preventDefault();
   const cx=e.offsetX/scale, cy=e.offsetY/scale;
   if(muteHit(cx,cy)){ toggleMute(); return; }
+  if(state===S.START){
+    const rowY=(LH/2-8)+62;
+    const charXs=[LW/2-90,LW/2-30,LW/2+30,LW/2+90];
+    for(let i=0;i<CHARS.length;i++){
+      if(Math.abs(cx-charXs[i])<22&&Math.abs(cy-rowY)<22){
+        selectedChar=i; localStorage.setItem('gauntlet_char',i); return;
+      }
+    }
+  }
   held=true; input();
 });
 canvas.addEventListener('pointerup',()=>held=false);
