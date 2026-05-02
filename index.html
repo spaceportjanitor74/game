@@ -119,6 +119,21 @@ const OVER_MUS=new Audio('music/gameover.ogg'); OVER_MUS.loop=false; OVER_MUS.vo
 /* ── SFX (Web Audio API — synthesized, no files needed) ─────── */
 let sfxCtx=null;
 function getSfx(){ if(!sfxCtx) sfxCtx=new(window.AudioContext||window.webkitAudioContext)(); return sfxCtx; }
+function playClick(){
+  if(muted) return;
+  try{
+    const ac=getSfx(); if(ac.state==='suspended') ac.resume();
+    const dur=0.045;
+    const osc=ac.createOscillator(); osc.type='sine';
+    osc.frequency.setValueAtTime(1000,ac.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(650,ac.currentTime+dur);
+    const gain=ac.createGain();
+    gain.gain.setValueAtTime(0.15,ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur);
+    osc.connect(gain); gain.connect(ac.destination);
+    osc.start(); osc.stop(ac.currentTime+dur+0.01);
+  }catch(e){}
+}
 function playFlap(){
   if(muted) return;
   try{
@@ -1148,6 +1163,7 @@ function die(){
   spawnDeath(); bird.vy=0; bird.angle=75;
 }
 function go(){
+  playClick();
   score=0; state=S.PLAY; held=false; biome=0; fadeAlpha=0;
   embers=[]; parts=[]; magic=[];
   lastPipe=performance.now()-(BASE_INTERVAL-950);
@@ -1169,13 +1185,13 @@ document.addEventListener('keyup',e=>{
 canvas.addEventListener('pointerdown',e=>{
   e.preventDefault();
   const cx=e.offsetX/scale, cy=e.offsetY/scale;
-  if(muteHit(cx,cy)){ toggleMute(); return; }
+  if(muteHit(cx,cy)){ toggleMute(); playClick(); return; }
   if(state===S.START||state===S.DEAD){
     const rowY=(LH/2-8)+(state===S.DEAD?72:62);
     const charXs=[LW/2-90,LW/2-30,LW/2+30,LW/2+90];
     for(let i=0;i<CHARS.length;i++){
       if(Math.abs(cx-charXs[i])<22&&Math.abs(cy-rowY)<22){
-        selectedChar=i; localStorage.setItem('gauntlet_char',i); return;
+        selectedChar=i; localStorage.setItem('gauntlet_char',i); playClick(); return;
       }
     }
   }
