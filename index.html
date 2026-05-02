@@ -115,6 +115,7 @@ const MUTE_VOL=0.65, AMBIENT_VOL=0.45;
 const FOREST_AMB=new Audio('music/forest.mp3'); FOREST_AMB.loop=true; FOREST_AMB.volume=0;
 const MENU_MUS=new Audio('music/menu.ogg'); MENU_MUS.loop=true; MENU_MUS.volume=0;
 const OVER_MUS=new Audio('music/gameover.ogg'); OVER_MUS.loop=false; OVER_MUS.volume=0;
+const _fadeIds=new WeakMap(); let _xfTimer=null;
 
 /* ── SFX (Web Audio API — synthesized, no files needed) ─────── */
 let sfxCtx=null;
@@ -203,20 +204,20 @@ function toggleMute(){
   OVER_MUS.volume=muted?0:(state===S.DEAD?MUTE_VOL:0);
 }
 function fadeAudio(a,toVol,step){
+  if(_fadeIds.has(a)){ clearInterval(_fadeIds.get(a)); _fadeIds.delete(a); }
   const id=setInterval(()=>{
     a.volume=toVol>a.volume?Math.min(toVol,a.volume+step):Math.max(toVol,a.volume-step);
-    if(a.volume===toVol) clearInterval(id);
+    if(Math.abs(a.volume-toVol)<0.001){ a.volume=toVol; clearInterval(id); _fadeIds.delete(a); }
   },50);
+  _fadeIds.set(a,id);
 }
 function crossfadeTrack(idx){
   if(idx===curTrack) return;
   const prev=curTrack; curTrack=idx;
-  // Fade out old track quickly, pause it after it's silent
-  if(prev>=0){ const t=TRACKS[prev]; fadeAudio(t,0,0.07); setTimeout(()=>t.pause(),600); }
-  // Delay new track start slightly so tracks don't pile up
+  if(prev>=0){ const t=TRACKS[prev]; fadeAudio(t,0,0.07); setTimeout(()=>t.pause(),650); }
+  if(_xfTimer){ clearTimeout(_xfTimer); _xfTimer=null; }
   const n=TRACKS[idx];
-  setTimeout(()=>{ n.play().catch(()=>{}); if(!muted) fadeAudio(n,MUTE_VOL,0.03); },400);
-  // Forest ambient layer
+  _xfTimer=setTimeout(()=>{ _xfTimer=null; n.play().catch(()=>{}); if(!muted) fadeAudio(n,MUTE_VOL,0.03); },400);
   if(idx===0){ FOREST_AMB.play().catch(()=>{}); if(!muted) fadeAudio(FOREST_AMB,AMBIENT_VOL,0.02); }
   else { fadeAudio(FOREST_AMB,0,0.04); setTimeout(()=>FOREST_AMB.pause(),800); }
 }
@@ -1477,7 +1478,8 @@ function loop(now){
 function die(){
   state=S.DEAD; flash=1; shakeAmt=9; best=Math.max(best,score);
   localStorage.setItem('gauntlet_best',best);
-  if(curTrack>=0){ fadeAudio(TRACKS[curTrack],0,0.06); setTimeout(()=>TRACKS[curTrack].pause(),700); }
+  if(_xfTimer){ clearTimeout(_xfTimer); _xfTimer=null; }
+  if(curTrack>=0){ const pt=TRACKS[curTrack]; fadeAudio(pt,0,0.06); setTimeout(()=>pt.pause(),700); }
   fadeAudio(FOREST_AMB,0,0.05); setTimeout(()=>FOREST_AMB.pause(),700);
   curTrack=-1;
   playGameOver();
