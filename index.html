@@ -98,9 +98,31 @@ const TRACK_SRCS=['music/forest_music.ogg','music/dark_forest.ogg','music/dungeo
 const TRACKS=TRACK_SRCS.map(src=>{ const a=new Audio(src); a.loop=true; a.volume=0; return a; });
 let curTrack=-1, audioUnlocked=false, muted=false;
 const MUTE_VOL=0.65, AMBIENT_VOL=0.45;
-// Secondary ambient layer for biome 0 (bird sounds layered under orchestral music)
 const FOREST_AMB=new Audio('music/forest.mp3'); FOREST_AMB.loop=true; FOREST_AMB.volume=0;
-function unlockAudio(){ if(audioUnlocked) return; audioUnlocked=true; crossfadeTrack(0); }
+
+/* ── SFX (Web Audio API — synthesized, no files needed) ─────── */
+let sfxCtx=null;
+function getSfx(){ if(!sfxCtx) sfxCtx=new(window.AudioContext||window.webkitAudioContext)(); return sfxCtx; }
+function playFlap(){
+  if(muted) return;
+  try{
+    const ac=getSfx(); if(ac.state==='suspended') ac.resume();
+    const dur=0.08, sr=ac.sampleRate;
+    const buf=ac.createBuffer(1,Math.floor(sr*dur),sr);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<d.length;i++){ const t=i/d.length; d[i]=(Math.random()*2-1)*Math.pow(1-t,1.6); }
+    const src=ac.createBufferSource(); src.buffer=buf;
+    const filt=ac.createBiquadFilter(); filt.type='bandpass';
+    filt.frequency.value=480+Math.random()*160; filt.Q.value=0.7;
+    const gain=ac.createGain();
+    gain.gain.setValueAtTime(0.38,ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur);
+    src.connect(filt); filt.connect(gain); gain.connect(ac.destination);
+    src.start(); src.stop(ac.currentTime+dur+0.01);
+  }catch(e){}
+}
+
+function unlockAudio(){ if(audioUnlocked) return; audioUnlocked=true; getSfx(); crossfadeTrack(0); }
 function toggleMute(){
   muted=!muted;
   TRACKS.forEach(t=>{ t.volume=muted?0:(t===TRACKS[curTrack]?MUTE_VOL:0); });
@@ -115,12 +137,14 @@ function fadeAudio(a,toVol,step){
 function crossfadeTrack(idx){
   if(idx===curTrack) return;
   const prev=curTrack; curTrack=idx;
-  if(prev>=0){ const t=TRACKS[prev]; fadeAudio(t,0,0.03); setTimeout(()=>t.pause(),2200); }
-  const n=TRACKS[idx]; n.play().catch(()=>{});
-  if(!muted) fadeAudio(n,MUTE_VOL,0.03);
-  // Forest ambient layer: fade in for biome 0, fade out otherwise
+  // Fade out old track quickly, pause it after it's silent
+  if(prev>=0){ const t=TRACKS[prev]; fadeAudio(t,0,0.07); setTimeout(()=>t.pause(),600); }
+  // Delay new track start slightly so tracks don't pile up
+  const n=TRACKS[idx];
+  setTimeout(()=>{ n.play().catch(()=>{}); if(!muted) fadeAudio(n,MUTE_VOL,0.03); },400);
+  // Forest ambient layer
   if(idx===0){ FOREST_AMB.play().catch(()=>{}); if(!muted) fadeAudio(FOREST_AMB,AMBIENT_VOL,0.02); }
-  else { fadeAudio(FOREST_AMB,0,0.02); setTimeout(()=>FOREST_AMB.pause(),3000); }
+  else { fadeAudio(FOREST_AMB,0,0.04); setTimeout(()=>FOREST_AMB.pause(),800); }
 }
 
 /* ── STATE ───────────────────────────────────────────────────── */
@@ -145,7 +169,7 @@ const BC = [
 /* ── BIRD ────────────────────────────────────────────────────── */
 const bird = {x:BIRD_X,y:LH/2,vy:0,angle:0,wing:0};
 function resetBird(){ Object.assign(bird,{x:BIRD_X,y:LH/2,vy:0,angle:0,wing:0}); }
-function flap(){ bird.vy=JUMP_VEL; bird.wing=0; spawnMagic(); }
+function flap(){ bird.vy=JUMP_VEL; bird.wing=0; spawnMagic(); playFlap(); }
 let held=false;
 function updateBird(){
   bird.vy += GRAVITY;
