@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>The Gauntlet – D&D Flapper</title>
+  <title>The Gauntlet</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { width:100%; height:100%; overflow:hidden; background:#0a0010;
@@ -44,9 +44,8 @@ const IMG_DEFS = [
   // Biome 1 – Enchanted Forest (CC-BY 4.0, Admurin / admurin.itch.io)
   ['b1_0','bg/b1_0.png'],['b1_1','bg/b1_1.png'],['b1_2','bg/b1_2.png'],
   ['b1_3','bg/b1_3.png'],['b1_4','bg/b1_4.png'],['b1_5','bg/b1_5.png'],['b1_6','bg/b1_6.png'],
-  // Biome 2 – Ancient Dungeon (CC0, opengameart.org)
-  ['b2_back','bg/b2_back.png'],['b2_far','bg/b2_far.png'],
-  ['b2_mid','bg/b2_mid.png'],['b2_front','bg/b2_front.png'],
+  // Biome 2 – Mossy Fortress (CC0, ansimuz / opengameart.org – Gothicvania)
+  ['b2_back','bg/b2_back.png'],['b2_mid','bg/b2_mid.png'],['b2_col','bg/b2_col.png'],
   // Biome 3 – Lava Cavern (CC-BY 4.0, Admurin)
   ['b3_0','bg/b3_0.png'],['b3_1','bg/b3_1.png'],['b3_2','bg/b3_2.png'],
   ['b3_3','bg/b3_3.png'],['b3_4','bg/b3_4.png'],['b3_5','bg/b3_5.png'],
@@ -84,15 +83,45 @@ const PIPE_MIN_H    = 52;
 /* ── BIOMES ──────────────────────────────────────────────────── */
 const BIOMES = [
   { name:'Sunlit Forest',      at:0  },
-  { name:'Enchanted Forest',   at:8  },
-  { name:'Ancient Dungeon',    at:18 },
+  { name:'Dark Forest',        at:8  },
+  { name:'Mossy Fortress',     at:18 },
   { name:'Lava Cavern',        at:32 },
   { name:'Volcanic Hellscape', at:50 },
 ];
 function biomeOf(s){ let b=0; for(let i=0;i<BIOMES.length;i++) if(s>=BIOMES[i].at) b=i; return b; }
-function pipeSpeed(s){ return BASE_SPEED+(MAX_SPEED-BASE_SPEED)*Math.min(s/60,1); }
-function pipeGap(s)  { return BASE_GAP-(BASE_GAP-MIN_GAP)*Math.min(s/50,1); }
-function pipeInt(s)  { return BASE_INTERVAL-(BASE_INTERVAL-MIN_INTERVAL)*Math.min(s/50,1); }
+function pipeSpeed(s){ return BASE_SPEED+(MAX_SPEED-BASE_SPEED)*Math.min(s/80,1); }
+function pipeGap(s)  { return BASE_GAP-(BASE_GAP-MIN_GAP)*Math.min(s/70,1); }
+function pipeInt(s)  { return BASE_INTERVAL-(BASE_INTERVAL-MIN_INTERVAL)*Math.min(s/70,1); }
+
+/* ── AUDIO ───────────────────────────────────────────────────── */
+const TRACK_SRCS=['music/forest_music.ogg','music/dark_forest.ogg','music/dungeon.ogg','music/lava.ogg','music/hell.mp3'];
+const TRACKS=TRACK_SRCS.map(src=>{ const a=new Audio(src); a.loop=true; a.volume=0; return a; });
+let curTrack=-1, audioUnlocked=false, muted=false;
+const MUTE_VOL=0.65, AMBIENT_VOL=0.45;
+// Secondary ambient layer for biome 0 (bird sounds layered under orchestral music)
+const FOREST_AMB=new Audio('music/forest.mp3'); FOREST_AMB.loop=true; FOREST_AMB.volume=0;
+function unlockAudio(){ if(audioUnlocked) return; audioUnlocked=true; crossfadeTrack(0); }
+function toggleMute(){
+  muted=!muted;
+  TRACKS.forEach(t=>{ t.volume=muted?0:(t===TRACKS[curTrack]?MUTE_VOL:0); });
+  FOREST_AMB.volume=muted?0:(curTrack===0?AMBIENT_VOL:0);
+}
+function fadeAudio(a,toVol,step){
+  const id=setInterval(()=>{
+    a.volume=toVol>a.volume?Math.min(toVol,a.volume+step):Math.max(toVol,a.volume-step);
+    if(a.volume===toVol) clearInterval(id);
+  },50);
+}
+function crossfadeTrack(idx){
+  if(idx===curTrack) return;
+  const prev=curTrack; curTrack=idx;
+  if(prev>=0){ const t=TRACKS[prev]; fadeAudio(t,0,0.03); setTimeout(()=>t.pause(),2200); }
+  const n=TRACKS[idx]; n.play().catch(()=>{});
+  if(!muted) fadeAudio(n,MUTE_VOL,0.03);
+  // Forest ambient layer: fade in for biome 0, fade out otherwise
+  if(idx===0){ FOREST_AMB.play().catch(()=>{}); if(!muted) fadeAudio(FOREST_AMB,AMBIENT_VOL,0.02); }
+  else { fadeAudio(FOREST_AMB,0,0.02); setTimeout(()=>FOREST_AMB.pause(),3000); }
+}
 
 /* ── STATE ───────────────────────────────────────────────────── */
 const S = {START:0,PLAY:1,DEAD:2};
@@ -143,7 +172,7 @@ function updatePipes(now){
     if(!p.passed && p.x+PIPE_W<bird.x-BIRD_R){
       p.passed=true; score++;
       const nb=biomeOf(score);
-      if(nb!==biome){ biome=nb; fadeAlpha=1.0; }
+      if(nb!==biome){ biome=nb; fadeAlpha=1.0; crossfadeTrack(nb); }
     }
     if(p.x+PIPE_W<-10) pipes.splice(i,1);
   }
@@ -287,53 +316,101 @@ function drawBG0(){
 }
 
 function drawBG1(){
-  // Enchanted/Dead Forest — 7 layers, CC-BY
-  drawBGLayer(IMGS.b1_0, 0.00); // sky
+  // Dark Forest — dead tree layers, CC-BY (Admurin)
+  drawBGLayer(IMGS.b1_0, 0.00);
   drawBGLayer(IMGS.b1_1, 0.07);
   drawBGLayer(IMGS.b1_2, 0.16);
   drawBGLayer(IMGS.b1_3, 0.30);
   drawBGLayer(IMGS.b1_4, 0.48);
   drawBGLayer(IMGS.b1_5, 0.66);
   drawBGLayer(IMGS.b1_6, 0.85);
-  // Purple tint to push it toward magical/enchanted
+  // Heavy darkness overlay — makes it feel night vs. the sunlit biome 0
   ctx.globalCompositeOperation='multiply';
-  ctx.fillStyle='rgba(80,0,160,0.38)';
+  ctx.fillStyle='rgba(8,12,20,0.62)';
   ctx.fillRect(0,0,LW,LH-GROUND_H);
   ctx.globalCompositeOperation='source-over';
-  // Firefly sprites
-  for(const f of FLIES){
-    f.ph+=.024; f.x=(f.x+f.sp*.22)%LW; f.y+=Math.sin(f.ph)*.18;
-    ctx.globalAlpha=.2+.8*Math.abs(Math.sin(f.ph));
-    ctx.fillStyle='#c084fc';
-    ctx.beginPath(); ctx.arc(f.x,f.y,2,0,Math.PI*2); ctx.fill();
-  }
-  ctx.globalAlpha=1;
-  // Stars
+  // Moon — pale disc in upper-left sky
+  const moonX=60, moonY=55;
+  ctx.fillStyle='rgba(200,210,230,0.22)';
+  ctx.beginPath(); ctx.arc(moonX,moonY,32,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(220,228,245,0.55)';
+  ctx.beginPath(); ctx.arc(moonX,moonY,18,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(240,244,255,0.80)';
+  ctx.beginPath(); ctx.arc(moonX,moonY,10,0,Math.PI*2); ctx.fill();
+  // Moonbeam shaft
+  ctx.fillStyle='rgba(210,220,240,0.06)';
+  ctx.beginPath(); ctx.moveTo(moonX-18,moonY+10); ctx.lineTo(moonX+18,moonY+10);
+  ctx.lineTo(moonX+35,LH-GROUND_H); ctx.lineTo(moonX-35,LH-GROUND_H); ctx.fill();
+  // Dim stars through bare branches
   for(const s of STARS){
-    s.t+=s.dt; ctx.globalAlpha=.15+.55*Math.abs(Math.sin(s.t));
-    ctx.fillStyle='#ddd6fe';
-    ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
+    s.t+=s.dt; ctx.globalAlpha=.06+.22*Math.abs(Math.sin(s.t));
+    ctx.fillStyle='#d0d8ea';
+    ctx.fillRect(s.x,s.y,Math.ceil(s.r),Math.ceil(s.r));
   }
   ctx.globalAlpha=1;
-  // Ground glow
-  const gg=ctx.createLinearGradient(0,LH-GROUND_H-55,0,LH-GROUND_H);
-  gg.addColorStop(0,'rgba(147,51,234,0)'); gg.addColorStop(1,'rgba(147,51,234,0.22)');
-  ctx.fillStyle=gg; ctx.fillRect(0,LH-GROUND_H-55,LW,55);
+  // Rolling ground mist
+  const mistOff=(worldX*0.14)%240;
+  for(let i=0;i<4;i++){
+    const mx=((i*240-mistOff+LW*2)%(LW+240))-60;
+    const alpha=0.10+0.06*Math.sin(i+worldX*0.002);
+    ctx.globalAlpha=alpha; ctx.fillStyle='#8899aa';
+    ctx.fillRect(mx,LH-GROUND_H-22,200,22);
+    ctx.globalAlpha=alpha*0.5; ctx.fillRect(mx+40,LH-GROUND_H-38,140,20);
+  }
+  ctx.globalAlpha=1;
+  // Deep floor shadow
+  const gg=ctx.createLinearGradient(0,LH-GROUND_H-60,0,LH-GROUND_H);
+  gg.addColorStop(0,'rgba(5,8,15,0)'); gg.addColorStop(1,'rgba(5,8,15,0.55)');
+  ctx.fillStyle=gg; ctx.fillRect(0,LH-GROUND_H-60,LW,60);
 }
 
 function drawBG2(){
-  // Ancient Dungeon — 4-layer seamless cave, CC0
-  // Back to front; each layer tiles the full bg height
-  drawBGLayer(IMGS.b2_back,  0.04);
-  drawBGLayer(IMGS.b2_far,   0.16);
-  drawBGLayer(IMGS.b2_mid,   0.40);
-  drawBGLayer(IMGS.b2_front, 0.72);
-  // Torch lights scroll with the world
-  drawTorches('#fbbf24');
-  // Ambient darkness at ceiling
-  const dt=ctx.createLinearGradient(0,0,0,50);
-  dt.addColorStop(0,'rgba(0,0,0,0.55)'); dt.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=dt; ctx.fillRect(0,0,LW,50);
+  // Mossy Fortress — gothic castle interior, CC0 (ansimuz / opengameart.org)
+  // Dark fill so any gaps between art layers read as deep shadow
+  ctx.fillStyle='#0a0d08'; ctx.fillRect(0,0,LW,LH-GROUND_H);
+  // Pan (don't tile) — these art assets aren't seamlessly repeating
+  function panBG(img, rate){
+    if(!img) return;
+    const dH=LH-GROUND_H, sc=dH/img.naturalHeight, dW=img.naturalWidth*sc;
+    const shift=Math.min(worldX*rate, Math.max(dW-LW,0));
+    ctx.drawImage(img,-shift,0,dW,dH);
+    if(dW<LW) ctx.drawImage(img,dW-shift,0,dW,dH); // second copy if narrower than canvas
+  }
+  panBG(IMGS.b2_back, 0.03); // far wall — very slow pan
+  panBG(IMGS.b2_mid,  0.12); // mid arches — moderate pan
+  // Foreground columns — spaced like scenery, scroll continuously left
+  if(IMGS.b2_col){
+    const img=IMGS.b2_col, sc=(LH-GROUND_H)/img.naturalHeight;
+    const dW=Math.round(img.naturalWidth*sc), dH=LH-GROUND_H;
+    const spacing=Math.round(dW*2.6);
+    const base=-(worldX*0.72)%spacing - spacing;
+    for(let cx=base; cx<LW+dW; cx+=spacing)
+      ctx.drawImage(img, Math.round(cx), 0, dW, dH);
+  }
+  // Moss tint — dark green shift makes stone read as overgrown
+  ctx.globalCompositeOperation='multiply';
+  ctx.fillStyle='rgba(32,55,22,0.45)';
+  ctx.fillRect(0,0,LW,LH-GROUND_H);
+  ctx.globalCompositeOperation='source-over';
+  // Moss drips from ceiling
+  ctx.fillStyle='rgba(55,95,30,0.65)';
+  const mOff=(worldX*0.28)%72;
+  for(let mx=-mOff; mx<LW+72; mx+=72){
+    const mh=10+Math.sin(mx*0.07)*5;
+    ctx.fillRect(Math.round(mx),    0, 6, Math.round(mh));
+    ctx.fillRect(Math.round(mx+22), 0, 4, Math.round(mh*0.55));
+    ctx.fillRect(Math.round(mx+48), 0, 5, Math.round(mh*0.75));
+  }
+  // Green-amber torches for mossy stone feel
+  drawTorches('#c8c040');
+  // Ground moss glow
+  const mg=ctx.createLinearGradient(0,LH-GROUND_H-45,0,LH-GROUND_H);
+  mg.addColorStop(0,'rgba(30,65,12,0)'); mg.addColorStop(1,'rgba(30,65,12,0.38)');
+  ctx.fillStyle=mg; ctx.fillRect(0,LH-GROUND_H-45,LW,45);
+  // Ceiling vignette — deep shadow at top like a vaulted roof
+  const dt=ctx.createLinearGradient(0,0,0,70);
+  dt.addColorStop(0,'rgba(0,0,0,0.85)'); dt.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=dt; ctx.fillRect(0,0,LW,70);
 }
 
 function drawBG3(){
@@ -390,25 +467,28 @@ function drawGround(){
       ctx.beginPath(); ctx.moveTo(x,gy+14); ctx.lineTo(x+28,gy+14); ctx.stroke();
     }
   } else if(biome===1){
-    ctx.fillStyle='#1a0a2e'; ctx.fillRect(0,gy,LW,GROUND_H);
-    ctx.fillStyle='#3d1f5e'; ctx.fillRect(0,gy,LW,14);
-    ctx.fillStyle='#7e22ce'; ctx.fillRect(0,gy+10,LW,4);
-    [45,135,215,325,415].forEach(mx=>{
-      const px=((mx-gOff*.5+LW*3)%(LW+60))-30;
-      ctx.fillStyle='#f3e8ff'; ctx.fillRect(px-3,gy-13,6,13);
-      ctx.fillStyle='#9333ea';
-      ctx.beginPath(); ctx.arc(px,gy-13,9,Math.PI,0,false); ctx.closePath(); ctx.fill();
-      ctx.globalAlpha=0.28;
-      const mgg=ctx.createRadialGradient(px,gy-14,0,px,gy-14,16);
-      mgg.addColorStop(0,'#c084fc'); mgg.addColorStop(1,'rgba(192,132,252,0)');
-      ctx.fillStyle=mgg; ctx.beginPath(); ctx.arc(px,gy-14,16,0,Math.PI*2); ctx.fill();
-      ctx.globalAlpha=1;
-    });
+    // Dark forest — dark soil with dead roots and low mist
+    ctx.fillStyle='#0e1218'; ctx.fillRect(0,gy,LW,GROUND_H);
+    ctx.fillStyle='#1a2030'; ctx.fillRect(0,gy,LW,10);
+    ctx.fillStyle='#253040'; ctx.fillRect(0,gy+8,LW,2);
+    // Exposed dark roots
+    ctx.strokeStyle='rgba(40,50,30,0.7)'; ctx.lineWidth=2;
+    for(let x=-gOff*.6;x<LW+80;x+=80){
+      const rx=Math.round(x);
+      ctx.beginPath(); ctx.moveTo(rx,gy+10); ctx.lineTo(rx+12,gy+28); ctx.lineTo(rx+8,gy+50); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(rx+40,gy+10); ctx.lineTo(rx+32,gy+35); ctx.stroke();
+    }
   } else if(biome===2){
-    ctx.fillStyle='#1c1917'; ctx.fillRect(0,gy,LW,GROUND_H);
-    ctx.fillStyle='#44403c'; ctx.fillRect(0,gy,LW,8);
-    ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1;
-    for(let x=-gOff;x<LW+48;x+=48) ctx.strokeRect(x,gy+8,48,GROUND_H-8);
+    // Mossy fortress floor — dark stone with green moss in cracks
+    ctx.fillStyle='#181e14'; ctx.fillRect(0,gy,LW,GROUND_H);
+    ctx.fillStyle='#2a3422'; ctx.fillRect(0,gy,LW,8);
+    ctx.fillStyle='#3a4a2c'; ctx.fillRect(0,gy+6,LW,2);
+    ctx.strokeStyle='rgba(0,0,0,0.5)'; ctx.lineWidth=1;
+    for(let x=-gOff;x<LW+48;x+=48){
+      ctx.strokeRect(Math.round(x),gy+8,48,GROUND_H-8);
+      ctx.fillStyle='rgba(50,90,30,0.35)';
+      ctx.fillRect(Math.round(x)+2,gy+8,6,3);
+    }
   } else if(biome===3){
     ctx.fillStyle='#0c0500'; ctx.fillRect(0,gy,LW,GROUND_H);
     ctx.strokeStyle=`rgba(255,69,0,${.55+.35*Math.sin(lavaPhase)})`; ctx.lineWidth=2;
@@ -437,74 +517,92 @@ function drawPipes(){
     else               drawHellPillar(p);
   }
 }
+/* pixel art brick helper — draws mortar + offset brick rows */
+function drawBricks(bx,by,bw,bh,mainCol,hiCol,mortarCol){
+  if(bh<=0||bw<=0) return;
+  ctx.fillStyle=mortarCol; ctx.fillRect(bx,by,bw,bh);
+  const BW=14,BH=9;
+  for(let r=0; r*BH<bh+BH; r++){
+    const ox=(r%2)*(BW/2);
+    for(let c=-1; c*BW<bw+BW; c++){
+      const x1=Math.max(Math.round(bx+c*BW+ox)+1,bx);
+      const y1=Math.max(Math.round(by+r*BH)+1,by);
+      const x2=Math.min(Math.round(bx+c*BW+ox)+BW-1,bx+bw);
+      const y2=Math.min(Math.round(by+r*BH)+BH-1,by+bh);
+      if(x2>x1&&y2>y1){
+        ctx.fillStyle=mainCol; ctx.fillRect(x1,y1,x2-x1,y2-y1);
+        ctx.fillStyle=hiCol;   ctx.fillRect(x1,y1,x2-x1,2);
+      }
+    }
+  }
+}
 function drawForestPillar({x,topH,botY}){
-  const botH=LH-GROUND_H-botY,w=PIPE_W,cH=20,cO=5;
-  const stone=ctx.createLinearGradient(x,0,x+w,0);
-  stone.addColorStop(0,'#4a5568'); stone.addColorStop(.3,'#718096');
-  stone.addColorStop(.7,'#4a5568'); stone.addColorStop(1,'#2d3748');
-  ctx.fillStyle=stone;
-  ctx.fillRect(x,0,w,topH-cH); ctx.fillRect(x,botY+cH,w,botH-cH);
-  ctx.fillStyle=biome===0?'rgba(76,175,80,.32)':'rgba(107,33,168,.28)';
-  ctx.fillRect(x,0,w,topH-cH); ctx.fillRect(x,botY+cH,w,botH-cH);
-  const cap=ctx.createLinearGradient(x-cO,0,x+w+cO,0);
-  cap.addColorStop(0,'#2d3748'); cap.addColorStop(.45,'#a0aec0'); cap.addColorStop(1,'#1a202c');
-  ctx.fillStyle=cap;
-  ctx.fillRect(x-cO,topH-cH,w+cO*2,cH); ctx.fillRect(x-cO,botY,w+cO*2,cH);
-  ctx.fillStyle='rgba(255,255,255,0.1)';
-  ctx.fillRect(x+5,0,7,topH-cH); ctx.fillRect(x+5,botY+cH,7,botH-cH);
+  const cO=5,cH=18,botH=LH-GROUND_H-botY;
+  const m=biome===0?'#626b52':'#4e4268',hi=biome===0?'#818a6e':'#6e5e8a',mo=biome===0?'#2e3522':'#271e3d';
+  const cc=biome===0?'#465236':'#362b52',ch=biome===0?'#627048':'#52427a';
+  drawBricks(x,0,PIPE_W,topH-cH,m,hi,mo);
+  // Moss / magic overlay patches
+  ctx.fillStyle=biome===0?'rgba(68,130,45,0.48)':'rgba(120,60,200,0.28)';
+  [[x+4,topH*.14,12,7],[x+38,topH*.38,9,6],[x+10,topH*.62,13,6]].forEach(([rx,ry,rw,rh])=>ctx.fillRect(rx,ry,rw,rh));
+  ctx.fillStyle=cc; ctx.fillRect(x-cO,topH-cH,PIPE_W+cO*2,cH);
+  ctx.fillStyle=ch; ctx.fillRect(x-cO,topH-cH,PIPE_W+cO*2,3);
+  ctx.fillStyle=mo;  ctx.fillRect(x-cO,topH-4,PIPE_W+cO*2,4);
+  ctx.fillStyle=cc; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,cH);
+  ctx.fillStyle=ch; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,3);
+  ctx.fillStyle=mo;  ctx.fillRect(x-cO,botY+cH-4,PIPE_W+cO*2,4);
+  drawBricks(x,botY+cH,PIPE_W,botH-cH,m,hi,mo);
+  ctx.fillStyle=biome===0?'rgba(68,130,45,0.48)':'rgba(120,60,200,0.28)';
+  [[x+6,botY+cH+12,10,6],[x+36,botY+cH+32,11,5]].forEach(([rx,ry,rw,rh])=>ctx.fillRect(rx,ry,rw,rh));
 }
 function drawStonePillar({x,topH,botY}){
-  const botH=LH-GROUND_H-botY,w=PIPE_W,cH=20,cO=5;
-  ctx.fillStyle='#44403c';
-  ctx.fillRect(x,0,w,topH-cH); ctx.fillRect(x,botY+cH,w,botH-cH);
-  ctx.strokeStyle='rgba(0,0,0,.45)'; ctx.lineWidth=1.5;
-  for(let r=0;r<topH-cH;r+=20){
-    ctx.beginPath(); ctx.moveTo(x,r); ctx.lineTo(x+w,r); ctx.stroke();
-    const bx=x+((Math.floor(r/20)%2)*(w/2));
-    ctx.beginPath(); ctx.moveTo(bx,r); ctx.lineTo(bx,r+20); ctx.stroke();
-  }
-  for(let r=botY+cH;r<botY+botH;r+=20){
-    ctx.beginPath(); ctx.moveTo(x,r); ctx.lineTo(x+w,r); ctx.stroke();
-  }
-  const cg=ctx.createLinearGradient(x-cO,0,x+w+cO,0);
-  cg.addColorStop(0,'#292524'); cg.addColorStop(.5,'#78716c'); cg.addColorStop(1,'#1c1917');
-  ctx.fillStyle=cg;
-  ctx.fillRect(x-cO,topH-cH,w+cO*2,cH); ctx.fillRect(x-cO,botY,w+cO*2,cH);
+  const cO=5,cH=18,botH=LH-GROUND_H-botY;
+  drawBricks(x,0,PIPE_W,topH-cH,'#52574d','#757a6f','#1e2118');
+  ctx.fillStyle='rgba(52,88,32,0.52)';
+  [[x+2,topH*.18,9,6],[x+42,topH*.42,10,5],[x+8,topH*.68,13,6]].forEach(([rx,ry,rw,rh])=>ctx.fillRect(rx,ry,rw,rh));
+  ctx.fillStyle='#30332a'; ctx.fillRect(x-cO,topH-cH,PIPE_W+cO*2,cH);
+  ctx.fillStyle='#52554c'; ctx.fillRect(x-cO,topH-cH,PIPE_W+cO*2,3);
+  ctx.fillStyle='#10120d'; ctx.fillRect(x-cO,topH-4,PIPE_W+cO*2,4);
+  ctx.fillStyle='#30332a'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,cH);
+  ctx.fillStyle='#52554c'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,3);
+  ctx.fillStyle='#10120d'; ctx.fillRect(x-cO,botY+cH-4,PIPE_W+cO*2,4);
+  drawBricks(x,botY+cH,PIPE_W,botH-cH,'#52574d','#757a6f','#1e2118');
+  ctx.fillStyle='rgba(52,88,32,0.52)';
+  [[x+4,botY+cH+14,10,5],[x+40,botY+cH+36,8,5]].forEach(([rx,ry,rw,rh])=>ctx.fillRect(rx,ry,rw,rh));
 }
 function drawLavaPillar({x,topH,botY}){
-  const botH=LH-GROUND_H-botY,w=PIPE_W,cH=20,cO=5;
-  const obs=ctx.createLinearGradient(x,0,x+w,0);
-  obs.addColorStop(0,'#1a0800'); obs.addColorStop(.4,'#3d1a00');
-  obs.addColorStop(.7,'#2a1000'); obs.addColorStop(1,'#0f0500');
-  ctx.fillStyle=obs;
-  ctx.fillRect(x,0,w,topH); ctx.fillRect(x,botY,w,botH);
-  ctx.strokeStyle=`rgba(255,102,0,${.55+.4*Math.sin(lavaPhase)})`; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.moveTo(x+15,0); ctx.lineTo(x+22,topH*.3);
-  ctx.lineTo(x+10,topH*.55); ctx.lineTo(x+18,topH*.85); ctx.stroke();
-  const lc=ctx.createLinearGradient(x-cO,0,x+w+cO,0);
-  lc.addColorStop(0,'#7f2200'); lc.addColorStop(.5,'#cc3300'); lc.addColorStop(1,'#7f2200');
-  ctx.fillStyle=lc;
-  ctx.fillRect(x-cO,topH-cH,w+cO*2,cH); ctx.fillRect(x-cO,botY,w+cO*2,cH);
-  ctx.globalAlpha=.75; ctx.fillStyle='#ff4500';
-  ctx.beginPath(); ctx.arc(x+20,topH+5,4,0,Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(x+40,topH+2,3,0,Math.PI*2); ctx.fill();
-  ctx.globalAlpha=1;
+  const cO=5,cH=18,botH=LH-GROUND_H-botY;
+  drawBricks(x,0,PIPE_W,topH-cH,'#1c0e00','#2e1800','#090400');
+  const cr=`rgba(255,95,0,${0.52+0.4*Math.sin(lavaPhase)})`;
+  ctx.strokeStyle=cr; ctx.lineWidth=1.5;
+  [[x+13,0,x+19,topH*.38],[x+36,topH*.22,x+28,topH*.7],[x+22,topH*.5,x+30,topH-cH]]
+    .forEach(([x1,y1,x2,y2])=>{ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); });
+  ctx.fillStyle='#6b2200'; ctx.fillRect(x-cO,topH-cH,PIPE_W+cO*2,cH);
+  ctx.fillStyle='#9b3200'; ctx.fillRect(x-cO,topH-cH,PIPE_W+cO*2,3);
+  ctx.fillStyle='#3b1000'; ctx.fillRect(x-cO,topH-4,PIPE_W+cO*2,4);
+  ctx.fillStyle='#6b2200'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,cH);
+  ctx.fillStyle='#9b3200'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,3);
+  ctx.fillStyle='#3b1000'; ctx.fillRect(x-cO,botY+cH-4,PIPE_W+cO*2,4);
+  drawBricks(x,botY+cH,PIPE_W,botH-cH,'#1c0e00','#2e1800','#090400');
+  const cr2=`rgba(255,95,0,${0.52+0.4*Math.sin(lavaPhase+1)})`;
+  ctx.strokeStyle=cr2;
+  [[x+20,botY+cH,x+14,botY+cH+48],[x+42,botY+cH+18,x+36,botY+cH+68]]
+    .forEach(([x1,y1,x2,y2])=>{ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); });
 }
 function drawHellPillar({x,topH,botY}){
-  const botH=LH-GROUND_H-botY,w=PIPE_W,cH=22,cO=6;
-  const bg=ctx.createLinearGradient(x,0,x+w,0);
-  bg.addColorStop(0,'#450a0a'); bg.addColorStop(.35,'#7f1d1d');
-  bg.addColorStop(.7,'#600f0f'); bg.addColorStop(1,'#300505');
-  ctx.fillStyle=bg;
-  ctx.fillRect(x,0,w,topH); ctx.fillRect(x,botY,w,botH);
-  ctx.fillStyle='rgba(255,60,0,.18)';
-  ctx.fillRect(x,0,5,topH); ctx.fillRect(x+w-5,0,5,topH);
-  ctx.fillRect(x,botY,5,botH); ctx.fillRect(x+w-5,botY,5,botH);
-  const hc=ctx.createLinearGradient(x-cO,0,x+w+cO,0);
-  hc.addColorStop(0,'#7f1d1d'); hc.addColorStop(.5,'#ef4444'); hc.addColorStop(1,'#7f1d1d');
-  ctx.fillStyle=hc;
-  ctx.fillRect(x-cO,topH-cH,w+cO*2,cH); ctx.fillRect(x-cO,botY,w+cO*2,cH);
-  pillarFlames(x,w,cO,topH,false); pillarFlames(x,w,cO,botY+cH,true);
+  const cO=6,cH=22,botH=LH-GROUND_H-botY;
+  drawBricks(x,0,PIPE_W,topH-cH,'#4a0f0f','#6b1a1a','#1e0404');
+  ctx.fillStyle=`rgba(255,45,0,${0.14+0.1*Math.sin(lavaPhase)})`;
+  ctx.fillRect(x,0,4,topH-cH); ctx.fillRect(x+PIPE_W-4,0,4,topH-cH);
+  ctx.fillStyle='#7f1d1d'; ctx.fillRect(x-cO,topH-cH,PIPE_W+cO*2,cH);
+  ctx.fillStyle='#ef4444'; ctx.fillRect(x-cO,topH-cH,PIPE_W+cO*2,3);
+  ctx.fillStyle='#450a0a'; ctx.fillRect(x-cO,topH-4,PIPE_W+cO*2,4);
+  ctx.fillStyle='#7f1d1d'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,cH);
+  ctx.fillStyle='#ef4444'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,3);
+  ctx.fillStyle='#450a0a'; ctx.fillRect(x-cO,botY+cH-4,PIPE_W+cO*2,4);
+  ctx.fillStyle=`rgba(255,45,0,${0.14+0.1*Math.sin(lavaPhase)})`;
+  ctx.fillRect(x,botY+cH,4,botH-cH); ctx.fillRect(x+PIPE_W-4,botY+cH,4,botH-cH);
+  drawBricks(x,botY+cH,PIPE_W,botH-cH,'#4a0f0f','#6b1a1a','#1e0404');
+  pillarFlames(x,PIPE_W,cO,topH,false); pillarFlames(x,PIPE_W,cO,botY+cH,true);
 }
 let fph=0;
 function pillarFlames(x,w,cO,y,up){
@@ -522,63 +620,69 @@ function pillarFlames(x,w,cO,y,up){
   ctx.globalAlpha=1;
 }
 
-/* ── BIRD DRAW ───────────────────────────────────────────────── */
+/* ── BIRD DRAW (pixel art) ───────────────────────────────────── */
 function drawBird(){
   const c=BC[biome];
   ctx.save();
   ctx.translate(bird.x,bird.y);
   ctx.rotate(bird.angle*Math.PI/180);
-  const wf=Math.sin(bird.wing);
-  // Tail feathers
-  [-0.38,0,0.38].forEach((spread,i)=>{
-    const ty=spread*14;
-    ctx.fillStyle=i===1?c.tail:c.thi;
-    ctx.beginPath();
-    ctx.moveTo(-10,ty*.25); ctx.quadraticCurveTo(-24,ty,-38-i*2,ty*.7);
-    ctx.quadraticCurveTo(-24,ty*.1,-10,3); ctx.fill();
-  });
+  const wo=Math.round(Math.sin(bird.wing)*5); // wing flap offset
+
   // Flame trail biome 3+
   if(biome>=3){
     for(let i=0;i<5;i++){
-      const fx=-14-i*6, fy=Math.sin(bird.wing+i*.8)*3;
-      ctx.globalAlpha=(1-i/5)*.75;
-      ctx.fillStyle=biome>=4?'#ff3300':'#ff8800';
-      ctx.beginPath(); ctx.arc(fx,fy,5.5-i*.7,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha=(1-i/5)*.85;
+      ctx.fillStyle=biome>=4?'#ff2200':'#ff8800';
+      ctx.fillRect(-15-i*6, Math.round(Math.sin(bird.wing+i)*3)-3, 5, 6);
     }
     ctx.globalAlpha=1;
   }
-  // Shadow
-  ctx.fillStyle='rgba(0,0,0,0.18)';
-  ctx.beginPath(); ctx.ellipse(2,8,BIRD_R,.85*BIRD_R*.5,0,0,Math.PI*2); ctx.fill();
+
+  // Tail — 3 stacked pixel feather bars
+  ctx.fillStyle=c.thi; ctx.fillRect(-26,-6,14,4);
+  ctx.fillStyle=c.tail; ctx.fillRect(-24,-2,16,4);
+  ctx.fillStyle=c.thi; ctx.fillRect(-26,2,14,4);
+  ctx.fillStyle=c.dark; ctx.fillRect(-14,-2,2,4); // root shadow
+
+  // Wing (behind body, animates up/down)
+  ctx.fillStyle=c.wing; ctx.fillRect(-8,-12+wo,20,8);
+  ctx.fillStyle=c.whi;  ctx.fillRect(-6,-12+wo,16,4);
+  // Feather tips row
+  for(let i=0;i<4;i++){
+    ctx.fillStyle=i%2===0?c.wing:c.whi;
+    ctx.fillRect(-6+i*4,-15+wo,4,4);
+  }
+
   // Body
-  const bg=ctx.createRadialGradient(-4,-3,2,1,2,BIRD_R);
-  bg.addColorStop(0,c.hi); bg.addColorStop(.5,c.body); bg.addColorStop(1,c.dark);
-  ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(0,2,BIRD_R,BIRD_R-3,0,0,Math.PI*2); ctx.fill();
-  // Wing
-  ctx.save(); ctx.translate(0,-2); ctx.rotate(wf*.48-.1);
-  const wg=ctx.createRadialGradient(0,0,2,0,0,17);
-  wg.addColorStop(0,c.whi); wg.addColorStop(1,c.wing);
-  ctx.fillStyle=wg;
-  ctx.beginPath(); ctx.ellipse(-3,-5,17,7,-0.44,0,Math.PI*2); ctx.fill();
-  ctx.strokeStyle=c.body; ctx.lineWidth=0.8; ctx.globalAlpha=0.4;
-  for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(-14+i*5,-4);ctx.lineTo(-14+i*5-2,-10);ctx.stroke();}
-  ctx.globalAlpha=1; ctx.restore();
+  ctx.fillStyle=c.body; ctx.fillRect(-10,-8,20,16);
+  ctx.fillStyle=c.hi;   ctx.fillRect(-8,-8,16,4);   // top highlight row
+  ctx.fillStyle=c.dark; ctx.fillRect(-10,6,20,2);    // bottom shadow row
+  ctx.fillStyle='rgba(0,0,0,0.18)';
+  ctx.fillRect(-10,-2,2,8); ctx.fillRect(8,-2,2,8); // side depth
+
   // Head
-  ctx.fillStyle=c.body; ctx.beginPath(); ctx.arc(12,-5,9,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle=c.hi; ctx.beginPath(); ctx.ellipse(9,-9,5,3.5,-0.5,0,Math.PI*2); ctx.fill();
-  // Crest
+  ctx.fillStyle=c.body; ctx.fillRect(8,-14,14,14);
+  ctx.fillStyle=c.hi;   ctx.fillRect(8,-14,14,4);   // head top highlight
+  ctx.fillRect(8,-10,4,10);                          // left edge highlight
+
+  // Crest — stepped pixel spikes
   ctx.fillStyle=c.crest;
-  ctx.beginPath(); ctx.moveTo(10,-13); ctx.quadraticCurveTo(13,-24,16,-21);
-  ctx.quadraticCurveTo(14,-15,11,-13); ctx.fill();
-  // Eye
-  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(15,-6,4.5,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle=c.eye; ctx.beginPath(); ctx.arc(16,-6,2.8,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(17,-7,1.1,0,Math.PI*2); ctx.fill();
-  // Beak
+  ctx.fillRect(10,-20,4,8);
+  ctx.fillRect(14,-18,4,6);
+  ctx.fillRect(18,-15,4,4);
+
+  // Eye socket + pupil + shine
+  ctx.fillStyle='#ffffff'; ctx.fillRect(16,-10,8,6);
+  ctx.fillStyle=c.eye;    ctx.fillRect(18,-10,4,4);
+  ctx.fillStyle='#ffffff'; ctx.fillRect(20,-10,2,2); // pixel shine
+
+  // Beak — two pixel bars forming open/closed triangle
   ctx.fillStyle=c.beak;
-  ctx.beginPath(); ctx.moveTo(19,-7); ctx.lineTo(30,-5); ctx.lineTo(19,-3); ctx.closePath(); ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,0.22)';
-  ctx.beginPath(); ctx.moveTo(19,-7); ctx.lineTo(27,-6); ctx.lineTo(19,-5); ctx.closePath(); ctx.fill();
+  ctx.fillRect(22,-8,10,4);   // upper mandible
+  ctx.fillRect(22,-4,8,4);    // lower mandible
+  ctx.fillStyle=c.hi;
+  ctx.fillRect(22,-8,10,2);   // beak highlight
+
   ctx.restore();
 }
 
@@ -590,6 +694,19 @@ function drawParts(){
   }
   ctx.globalAlpha=1;
 }
+
+/* ── MUTE BUTTON ─────────────────────────────────────────────── */
+const MUTE_BTN={x:LW-38,y:8,w:30,h:22};
+function drawMuteBtn(){
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,0.50)';
+  rr(MUTE_BTN.x,MUTE_BTN.y,MUTE_BTN.w,MUTE_BTN.h,5); ctx.fill();
+  ctx.fillStyle=muted?'#6b7280':'#a78bfa';
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='14px Georgia';
+  ctx.fillText(muted?'🔇':'🔊',MUTE_BTN.x+MUTE_BTN.w/2,MUTE_BTN.y+MUTE_BTN.h/2);
+  ctx.restore();
+}
+function muteHit(cx,cy){ return cx>=MUTE_BTN.x&&cx<=MUTE_BTN.x+MUTE_BTN.w&&cy>=MUTE_BTN.y&&cy<=MUTE_BTN.y+MUTE_BTN.h; }
 
 /* ── SCORE HUD ───────────────────────────────────────────────── */
 function drawScore(){
@@ -605,6 +722,7 @@ function drawScore(){
   ctx.strokeText(score,LW/2,30);
   ctx.fillStyle='#fff8e7'; ctx.fillText(score,LW/2,30);
   ctx.restore();
+  drawMuteBtn();
 }
 
 /* ── FLASH ───────────────────────────────────────────────────── */
@@ -659,12 +777,12 @@ function drawStart(now){
   tg.addColorStop(0,'#fbbf24'); tg.addColorStop(1,'#f59e0b');
   ctx.fillStyle=tg; ctx.fillText('⚔  THE GAUNTLET  ⚔',LW/2,cy-118);
   ctx.font='bold 16px Georgia'; ctx.fillStyle='#c4b5fd';
-  ctx.fillText('A Dungeons & Dragons Adventure',LW/2,cy-88);
+  ctx.fillText('How far can you go?',LW/2,cy-88);
   ctx.strokeStyle='rgba(167,139,250,.35)'; ctx.lineWidth=1;
   ctx.beginPath(); ctx.moveTo(LW/2-125,cy-70); ctx.lineTo(LW/2+125,cy-70); ctx.stroke();
   ctx.font='13px Georgia'; ctx.fillStyle='#a78bfa';
   ctx.fillText('Journey through 5 realms:',LW/2,cy-52);
-  ['🌲 Sunlit Forest','🌙 Enchanted Forest','🏰 Ancient Dungeon','🌋 Lava Cavern','☠ Volcanic Hellscape']
+  ['🌲 Sunlit Forest','🌑 Dark Forest','🏰 Mossy Fortress','🌋 Lava Cavern','☠ Volcanic Hellscape']
     .forEach((r,i)=>{ ctx.font='12px Georgia'; ctx.fillStyle='#7c3aed'; ctx.fillText(r,LW/2,cy-34+i*17); });
   if(best>0){ ctx.font='15px Georgia'; ctx.fillStyle='#fbbf24'; ctx.fillText('Best: '+best+' pipes',LW/2,cy+68); }
   ctx.font='14px Georgia'; ctx.fillStyle='#6b7280';
@@ -741,7 +859,7 @@ function loop(now){
 
   if(state===S.START){
     idleBird(now); updateParts();
-    drawGround(); drawParts(); drawBird(); drawStart(now);
+    drawGround(); drawParts(); drawBird(); drawStart(now); drawMuteBtn();
   } else if(state===S.PLAY){
     updateBird(); updatePipes(now); updateGround(); updateParts();
     drawPipes(); drawGround(); drawParts(); drawBird(); drawScore(); drawFlash();
@@ -761,18 +879,26 @@ function go(){
   score=0; state=S.PLAY; held=false; biome=0; fadeAlpha=0;
   embers=[]; parts=[]; magic=[];
   lastPipe=performance.now()-(BASE_INTERVAL-950);
+  crossfadeTrack(0);
   resetBird(); resetPipes(); flap();
 }
 function input(){
+  unlockAudio();
   if(state===S.START||state===S.DEAD) go(); else flap();
 }
 document.addEventListener('keydown',e=>{
+  if(e.code==='KeyM'){ e.preventDefault(); toggleMute(); return; }
   if(e.code==='Space'||e.key==='ArrowUp'){ e.preventDefault(); if(!e.repeat) input(); held=true; }
 });
 document.addEventListener('keyup',e=>{
   if(e.code==='Space'||e.key==='ArrowUp') held=false;
 });
-canvas.addEventListener('pointerdown',e=>{ e.preventDefault(); held=true; input(); });
+canvas.addEventListener('pointerdown',e=>{
+  e.preventDefault();
+  const cx=e.offsetX/scale, cy=e.offsetY/scale;
+  if(muteHit(cx,cy)){ toggleMute(); return; }
+  held=true; input();
+});
 canvas.addEventListener('pointerup',()=>held=false);
 canvas.addEventListener('pointerleave',()=>held=false);
 
