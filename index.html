@@ -517,6 +517,36 @@ function drawPipes(){
     else               drawHellPillar(p);
   }
 }
+/* ── PIPE LIGHT FIXTURES ─────────────────────────────────────── */
+// Hanging lantern on bottom face of top-pipe cap (flame into gap)
+function drawCapLantern(tx,ty,fc,gc){
+  const fl=0.72+0.28*Math.sin(torchPhase);
+  ctx.fillStyle='#2e2a24'; ctx.fillRect(tx-1,ty,2,5);        // chain
+  ctx.fillStyle='#403b33'; ctx.fillRect(tx-6,ty+4,12,3);     // lantern top
+  ctx.fillStyle='#4a4438'; ctx.fillRect(tx-5,ty+7,10,9);     // lantern body
+  ctx.fillStyle='#2e2a24'; ctx.fillRect(tx-6,ty+16,12,2);    // lantern base
+  const g=ctx.createRadialGradient(tx,ty+12,0,tx,ty+12,22*fl);
+  g.addColorStop(0,gc); g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(tx,ty+12,24*fl,0,Math.PI*2); ctx.fill();
+  ctx.globalAlpha=fl;
+  ctx.fillStyle=fc; ctx.fillRect(tx-2,ty+8,4,6); ctx.fillRect(tx-1,ty+7,2,3);
+  ctx.fillStyle='#fefce8'; ctx.fillRect(tx-1,ty+9,2,3);
+  ctx.globalAlpha=1;
+}
+// Wall torch on top face of bottom-pipe cap (flame up into gap)
+function drawCapTorch(tx,ty,fc,gc){
+  const fl=0.72+0.28*Math.sin(torchPhase+0.7);
+  ctx.fillStyle='#2e2a24'; ctx.fillRect(tx-2,ty-9,4,9);      // post
+  ctx.fillStyle='#403b33'; ctx.fillRect(tx-4,ty-11,8,4);     // cup
+  const g=ctx.createRadialGradient(tx,ty-15,0,tx,ty-15,20*fl);
+  g.addColorStop(0,gc); g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(tx,ty-15,22*fl,0,Math.PI*2); ctx.fill();
+  ctx.globalAlpha=fl;
+  ctx.fillStyle=fc; ctx.fillRect(tx-2,ty-21,4,8); ctx.fillRect(tx-1,ty-25,2,6);
+  ctx.fillStyle='#fefce8'; ctx.fillRect(tx-1,ty-23,2,4);
+  ctx.globalAlpha=1;
+}
+
 /* pixel art brick helper — draws mortar + offset brick rows */
 function drawBricks(bx,by,bw,bh,mainCol,hiCol,mortarCol){
   if(bh<=0||bw<=0) return;
@@ -553,6 +583,9 @@ function drawForestPillar({x,topH,botY}){
   drawBricks(x,botY+cH,PIPE_W,botH-cH,m,hi,mo);
   ctx.fillStyle=biome===0?'rgba(68,130,45,0.48)':'rgba(120,60,200,0.28)';
   [[x+6,botY+cH+12,10,6],[x+36,botY+cH+32,11,5]].forEach(([rx,ry,rw,rh])=>ctx.fillRect(rx,ry,rw,rh));
+  const fc0=biome===0?'#fbbf24':'#c084fc', gc0=biome===0?'rgba(255,185,50,0.55)':'rgba(180,80,240,0.45)';
+  drawCapLantern(x+PIPE_W/2,topH,fc0,gc0);
+  drawCapTorch(x+PIPE_W/2,botY,fc0,gc0);
 }
 function drawStonePillar({x,topH,botY}){
   const cO=5,cH=18,botH=LH-GROUND_H-botY;
@@ -568,6 +601,8 @@ function drawStonePillar({x,topH,botY}){
   drawBricks(x,botY+cH,PIPE_W,botH-cH,'#52574d','#757a6f','#1e2118');
   ctx.fillStyle='rgba(52,88,32,0.52)';
   [[x+4,botY+cH+14,10,5],[x+40,botY+cH+36,8,5]].forEach(([rx,ry,rw,rh])=>ctx.fillRect(rx,ry,rw,rh));
+  drawCapLantern(x+PIPE_W/2,topH,'#c8c040','rgba(180,195,40,0.50)');
+  drawCapTorch(x+PIPE_W/2,botY,'#c8c040','rgba(180,195,40,0.50)');
 }
 function drawLavaPillar({x,topH,botY}){
   const cO=5,cH=18,botH=LH-GROUND_H-botY;
@@ -587,6 +622,8 @@ function drawLavaPillar({x,topH,botY}){
   ctx.strokeStyle=cr2;
   [[x+20,botY+cH,x+14,botY+cH+48],[x+42,botY+cH+18,x+36,botY+cH+68]]
     .forEach(([x1,y1,x2,y2])=>{ ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); });
+  drawCapLantern(x+PIPE_W/2,topH,'#ff7700','rgba(255,100,0,0.65)');
+  drawCapTorch(x+PIPE_W/2,botY,'#ff7700','rgba(255,100,0,0.65)');
 }
 function drawHellPillar({x,topH,botY}){
   const cO=6,cH=22,botH=LH-GROUND_H-botY;
@@ -603,6 +640,8 @@ function drawHellPillar({x,topH,botY}){
   ctx.fillRect(x,botY+cH,4,botH-cH); ctx.fillRect(x+PIPE_W-4,botY+cH,4,botH-cH);
   drawBricks(x,botY+cH,PIPE_W,botH-cH,'#4a0f0f','#6b1a1a','#1e0404');
   pillarFlames(x,PIPE_W,cO,topH,false); pillarFlames(x,PIPE_W,cO,botY+cH,true);
+  drawCapLantern(x+PIPE_W/2,topH,'#ff3300','rgba(255,40,0,0.70)');
+  drawCapTorch(x+PIPE_W/2,botY,'#ff3300','rgba(255,40,0,0.70)');
 }
 let fph=0;
 function pillarFlames(x,w,cO,y,up){
