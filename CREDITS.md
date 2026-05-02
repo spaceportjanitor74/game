@@ -16,7 +16,7 @@
 - **Dark Forest**: "Dark Forest Theme" by cynicmusic (The Cynic Project) — CC0 Public Domain — opengameart.org
 - **Mossy Fortress**: "Loopable Dungeon Ambience" — opengameart.org
 - **Lava Cavern**: "Heavy Dungeon" — opengameart.org
-- **Volcanic Hellscape**: "Lava Dungeon Battle" — opengameart.org
+- **Volcanic Hellscape**: "The 9th Circle V2" by Joth — CC0 Public Domain — opengameart.org
 
 ## Game
 

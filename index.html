@@ -97,10 +97,10 @@ const PIPE_MIN_H    = 52;
 /* ── BIOMES ──────────────────────────────────────────────────── */
 const BIOMES = [
   { name:'Sunlit Forest',      at:0  },
-  { name:'Dark Forest',        at:8  },
-  { name:'Mossy Fortress',     at:18 },
-  { name:'Lava Cavern',        at:32 },
-  { name:'Volcanic Hellscape', at:50 },
+  { name:'Dark Forest',        at:15 },
+  { name:'Mossy Fortress',     at:32 },
+  { name:'Lava Cavern',        at:55 },
+  { name:'Volcanic Hellscape', at:82 },
 ];
 function biomeOf(s){ let b=0; for(let i=0;i<BIOMES.length;i++) if(s>=BIOMES[i].at) b=i; return b; }
 function pipeSpeed(s){ return BASE_SPEED+(MAX_SPEED-BASE_SPEED)*Math.min(s/80,1); }
@@ -950,49 +950,78 @@ function drawLavaPillar({x,topH,botY}){
   drawCapTorch(x+PIPE_W/2,botY,'#ff7700','rgba(255,100,0,0.65)');
 }
 function drawHellPillar({x,topH,botY}){
-  const cO=6,cH=22,botH=LH-GROUND_H-botY;
-  const glow=`rgba(255,45,0,${0.14+0.1*Math.sin(lavaPhase)})`;
-  // ── TOP: hell stalactites ─────────────────────────────────────
-  ctx.fillStyle='#200404'; ctx.fillRect(x,0,PIPE_W,topH-12);
-  ctx.fillStyle=glow; ctx.fillRect(x,0,4,topH-12); ctx.fillRect(x+PIPE_W-4,0,4,topH-12);
-  ctx.fillStyle='#7f1d1d'; ctx.fillRect(x-cO,topH-12,PIPE_W+cO*2,12);
-  ctx.fillStyle='#ef4444'; ctx.fillRect(x-cO,topH-12,PIPE_W+cO*2,3);
-  ctx.fillStyle='#450a0a'; ctx.fillRect(x-cO,topH-2,PIPE_W+cO*2,2);
-  [[x+PIPE_W/2,34,13],[x+10,24,9],[x+PIPE_W-10,28,10],[x+3,14,6],[x+PIPE_W-3,16,6]]
+  const cO=8, botH=LH-GROUND_H-botY, lp=lavaPhase;
+  const redGlow=`rgba(255,30,0,${0.20+0.12*Math.sin(lp)})`;
+
+  // ── TOP: volcanic stalactites ─────────────────────────────────
+  ctx.fillStyle='#110103'; ctx.fillRect(x-cO,0,PIPE_W+cO*2,topH);
+  ctx.fillStyle=redGlow;
+  ctx.fillRect(x-cO,0,6,topH); ctx.fillRect(x+PIPE_W+cO-6,0,6,topH);
+  ctx.strokeStyle=`rgba(255,70,0,${0.45+0.3*Math.sin(lp*1.2)})`; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(x+16,topH*0.15); ctx.lineTo(x+12,topH*0.58); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x+42,topH*0.30); ctx.lineTo(x+46,topH*0.72); ctx.stroke();
+  // stalactites: [cx, len, width]
+  [[x+PIPE_W/2,46,16],[x+10,33,11],[x+PIPE_W-10,38,12],[x+3,19,6],[x+PIPE_W-4,22,7],[x+30,40,13]]
     .forEach(([cx,len,w])=>{
-      ctx.fillStyle='#2e0606'; ctx.fillRect(cx-Math.floor(w/2),topH,w,len-5);
-      ctx.beginPath(); ctx.moveTo(cx-Math.floor(w/2),topH+len-5); ctx.lineTo(cx,topH+len); ctx.lineTo(cx+Math.ceil(w/2),topH+len-5); ctx.fill();
-      ctx.fillStyle='#5c1010'; ctx.fillRect(cx-Math.floor(w/2),topH,2,len-5);
-      ctx.globalAlpha=0.6+0.3*Math.sin(lavaPhase+cx*0.1);
-      ctx.fillStyle='#ff2200'; ctx.fillRect(cx-1,topH+len-2,2,5);
-      ctx.globalAlpha=1;
-      const gg=ctx.createRadialGradient(cx,topH+len+2,0,cx,topH+len+2,7);
-      gg.addColorStop(0,'rgba(255,40,0,0.55)'); gg.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(cx,topH+len+2,7,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#200305'; ctx.fillRect(cx-Math.floor(w/2),topH,w,len-6);
+      ctx.fillStyle='#400808'; ctx.fillRect(cx-Math.floor(w/2),topH,2,len-6);
+      ctx.fillStyle='#200305';
+      ctx.beginPath(); ctx.moveTo(cx-Math.floor(w/2),topH+len-6); ctx.lineTo(cx,topH+len+2); ctx.lineTo(cx+Math.ceil(w/2),topH+len-6); ctx.fill();
+      ctx.strokeStyle=`rgba(255,65,0,${0.45+0.3*Math.sin(lp+cx*0.09)})`; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(cx+2,topH+4); ctx.lineTo(cx,topH+len-4); ctx.stroke();
+      const ty=topH+len+2;
+      const tg=ctx.createRadialGradient(cx,ty,0,cx,ty,10);
+      tg.addColorStop(0,'rgba(255,55,0,0.65)'); tg.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=tg; ctx.beginPath(); ctx.arc(cx,ty,10,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha=0.6+0.35*Math.sin(lp+cx*0.1);
+      ctx.fillStyle='#ff3300'; ctx.fillRect(cx-1,ty-1,2,4); ctx.globalAlpha=1;
     });
-  pillarFlames(x,PIPE_W,cO,topH,false);
-  // ── BOTTOM: hell pillar ───────────────────────────────────────
-  ctx.fillStyle='#7f1d1d'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,cH);
-  ctx.fillStyle='#ef4444'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,3);
-  ctx.fillStyle='#450a0a'; ctx.fillRect(x-cO,botY+cH-4,PIPE_W+cO*2,4);
-  ctx.fillStyle=glow; ctx.fillRect(x,botY+cH,4,botH-cH); ctx.fillRect(x+PIPE_W-4,botY+cH,4,botH-cH);
-  drawBricks(x,botY+cH,PIPE_W,botH-cH,'#4a0f0f','#6b1a1a','#1e0404');
-  pillarFlames(x,PIPE_W,cO,botY+cH,true);
-  drawCapTorch(x+PIPE_W/2,botY,'#ff3300','rgba(255,40,0,0.70)');
-}
-let fph=0;
-function pillarFlames(x,w,cO,y,up){
-  fph+=0.04;
-  for(let i=0;i<5;i++){
-    const fx=x-cO+(w+cO*2)/4*i+Math.sin(fph+i)*3;
-    const fh=14+6*Math.abs(Math.sin(fph+i*.7));
-    ctx.globalAlpha=.65+.35*Math.sin(fph+i);
-    ctx.fillStyle=i%2===0?'#ff6600':'#ffaa00';
-    ctx.beginPath();
-    if(!up){ctx.moveTo(fx,y);ctx.quadraticCurveTo(fx+4,y+fh/2,fx,y+fh);ctx.quadraticCurveTo(fx-4,y+fh/2,fx,y);}
-    else   {ctx.moveTo(fx,y);ctx.quadraticCurveTo(fx+4,y-fh/2,fx,y-fh);ctx.quadraticCurveTo(fx-4,y-fh/2,fx,y);}
-    ctx.fill();
-  }
+  // flame tongues on 3 tallest stalactites
+  [[x+PIPE_W/2,topH+48],[x+30,topH+42],[x+PIPE_W-10,topH+40]].forEach(([fx,fy])=>{
+    const fh=12+4*Math.abs(Math.sin(lp*1.4+fx*0.05));
+    ctx.globalAlpha=0.65+0.3*Math.sin(lp+fx*0.04);
+    ctx.fillStyle='#ff4400';
+    ctx.beginPath(); ctx.moveTo(fx,fy); ctx.quadraticCurveTo(fx+4,fy+fh/2,fx,fy+fh); ctx.quadraticCurveTo(fx-4,fy+fh/2,fx,fy); ctx.fill();
+    ctx.fillStyle='#ffcc00';
+    ctx.beginPath(); ctx.moveTo(fx,fy); ctx.quadraticCurveTo(fx+2,fy+fh*.4,fx,fy+fh*.75); ctx.quadraticCurveTo(fx-2,fy+fh*.4,fx,fy); ctx.fill();
+  });
+  ctx.globalAlpha=1;
+
+  // ── BOTTOM: volcanic stalagmites ─────────────────────────────
+  ctx.fillStyle='#110103'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,botH);
+  ctx.fillStyle=redGlow;
+  ctx.fillRect(x-cO,botY,6,botH); ctx.fillRect(x+PIPE_W+cO-6,botY,6,botH);
+  ctx.strokeStyle=`rgba(255,70,0,${0.45+0.3*Math.sin(lp*1.1+1)})`; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(x+20,botY+20); ctx.lineTo(x+15,botY+65); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x+40,botY+32); ctx.lineTo(x+45,botY+80); ctx.stroke();
+  // lava pool surface at cap
+  const lpg=ctx.createLinearGradient(0,botY,0,botY+14);
+  lpg.addColorStop(0,`rgba(255,${55+35*Math.sin(lp*2)},0,0.80)`); lpg.addColorStop(1,'rgba(160,15,0,0)');
+  ctx.fillStyle=lpg; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,14);
+  // stalagmites: [cx, len, width]
+  [[x+PIPE_W/2,44,16],[x+10,31,11],[x+PIPE_W-10,36,12],[x+3,18,6],[x+PIPE_W-4,21,7],[x+30,38,13]]
+    .forEach(([cx,len,w])=>{
+      ctx.fillStyle='#200305';
+      ctx.beginPath(); ctx.moveTo(cx-Math.floor(w/2),botY); ctx.lineTo(cx,botY-len); ctx.lineTo(cx+Math.ceil(w/2),botY); ctx.fill();
+      ctx.fillStyle='#400808'; ctx.fillRect(cx-Math.floor(w/2),botY-len+8,2,len-8);
+      ctx.strokeStyle=`rgba(255,65,0,${0.45+0.3*Math.sin(lp+cx*0.09)})`; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(cx+2,botY-8); ctx.lineTo(cx,botY-len+6); ctx.stroke();
+      const ty=botY-len;
+      const tg=ctx.createRadialGradient(cx,ty,0,cx,ty,10);
+      tg.addColorStop(0,'rgba(255,55,0,0.65)'); tg.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=tg; ctx.beginPath(); ctx.arc(cx,ty,10,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha=0.6+0.35*Math.sin(lp+cx*0.1);
+      ctx.fillStyle='#ff3300'; ctx.fillRect(cx-1,ty-2,2,4); ctx.globalAlpha=1;
+    });
+  // flame jets from tallest stalagmites
+  [[x+PIPE_W/2,botY-44],[x+30,botY-38],[x+PIPE_W-10,botY-36]].forEach(([fx,fy])=>{
+    const fh=12+4*Math.abs(Math.sin(lp*1.4+fx*0.05));
+    ctx.globalAlpha=0.65+0.3*Math.sin(lp*1.2+fx*0.04);
+    ctx.fillStyle='#ff4400';
+    ctx.beginPath(); ctx.moveTo(fx,fy); ctx.quadraticCurveTo(fx+4,fy-fh/2,fx,fy-fh); ctx.quadraticCurveTo(fx-4,fy-fh/2,fx,fy); ctx.fill();
+    ctx.fillStyle='#ffcc00';
+    ctx.beginPath(); ctx.moveTo(fx,fy); ctx.quadraticCurveTo(fx+2,fy-fh*.4,fx,fy-fh*.75); ctx.quadraticCurveTo(fx-2,fy-fh*.4,fx,fy); ctx.fill();
+  });
   ctx.globalAlpha=1;
 }
 
