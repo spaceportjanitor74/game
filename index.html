@@ -115,7 +115,7 @@ const MUTE_VOL=0.65, AMBIENT_VOL=0.45;
 const FOREST_AMB=new Audio('music/forest.mp3'); FOREST_AMB.loop=true; FOREST_AMB.volume=0;
 const MENU_MUS=new Audio('music/menu.ogg'); MENU_MUS.loop=true; MENU_MUS.volume=0;
 const OVER_MUS=new Audio('music/gameover.ogg'); OVER_MUS.loop=false; OVER_MUS.volume=0;
-const _fadeIds=new WeakMap(); let _xfTimer=null;
+const _fadeIds=new WeakMap(); const _pauseIds=new WeakMap(); let _xfTimer=null;
 
 /* ── SFX (Web Audio API — synthesized, no files needed) ─────── */
 let sfxCtx=null;
@@ -190,12 +190,12 @@ function unlockAudio(){
   MENU_MUS.play().catch(()=>{});
   if(!muted) fadeAudio(MENU_MUS,MUTE_VOL*0.75,0.02);
 }
-function stopMenuMusic(){ fadeAudio(MENU_MUS,0,0.06); setTimeout(()=>MENU_MUS.pause(),600); }
+function stopMenuMusic(){ fadeAudio(MENU_MUS,0,0.06); schedulePause(MENU_MUS,600); }
 function playGameOver(){
   OVER_MUS.currentTime=0; OVER_MUS.play().catch(()=>{});
   if(!muted) fadeAudio(OVER_MUS,MUTE_VOL,0.03);
 }
-function stopGameOver(){ fadeAudio(OVER_MUS,0,0.07); setTimeout(()=>OVER_MUS.pause(),500); }
+function stopGameOver(){ fadeAudio(OVER_MUS,0,0.07); schedulePause(OVER_MUS,500); }
 function toggleMute(){
   muted=!muted;
   TRACKS.forEach(t=>{ t.volume=muted?0:(t===TRACKS[curTrack]?MUTE_VOL:0); });
@@ -211,15 +211,21 @@ function fadeAudio(a,toVol,step){
   },50);
   _fadeIds.set(a,id);
 }
+function schedulePause(a,delay){
+  if(_pauseIds.has(a)){ clearTimeout(_pauseIds.get(a)); _pauseIds.delete(a); }
+  const id=setTimeout(()=>{ _pauseIds.delete(a); a.pause(); },delay);
+  _pauseIds.set(a,id);
+}
+function cancelPause(a){ if(_pauseIds.has(a)){ clearTimeout(_pauseIds.get(a)); _pauseIds.delete(a); } }
 function crossfadeTrack(idx){
   if(idx===curTrack) return;
   const prev=curTrack; curTrack=idx;
-  if(prev>=0){ const t=TRACKS[prev]; fadeAudio(t,0,0.07); setTimeout(()=>t.pause(),650); }
+  if(prev>=0){ const t=TRACKS[prev]; fadeAudio(t,0,0.07); schedulePause(t,650); }
   if(_xfTimer){ clearTimeout(_xfTimer); _xfTimer=null; }
   const n=TRACKS[idx];
-  _xfTimer=setTimeout(()=>{ _xfTimer=null; n.play().catch(()=>{}); if(!muted) fadeAudio(n,MUTE_VOL,0.03); },400);
-  if(idx===0){ FOREST_AMB.play().catch(()=>{}); if(!muted) fadeAudio(FOREST_AMB,AMBIENT_VOL,0.02); }
-  else { fadeAudio(FOREST_AMB,0,0.04); setTimeout(()=>FOREST_AMB.pause(),800); }
+  _xfTimer=setTimeout(()=>{ _xfTimer=null; cancelPause(n); n.play().catch(()=>{}); if(!muted) fadeAudio(n,MUTE_VOL,0.03); },400);
+  if(idx===0){ cancelPause(FOREST_AMB); FOREST_AMB.play().catch(()=>{}); if(!muted) fadeAudio(FOREST_AMB,AMBIENT_VOL,0.02); }
+  else { fadeAudio(FOREST_AMB,0,0.04); schedulePause(FOREST_AMB,800); }
 }
 
 /* ── STATE ───────────────────────────────────────────────────── */
@@ -1479,8 +1485,8 @@ function die(){
   state=S.DEAD; flash=1; shakeAmt=9; best=Math.max(best,score);
   localStorage.setItem('gauntlet_best',best);
   if(_xfTimer){ clearTimeout(_xfTimer); _xfTimer=null; }
-  if(curTrack>=0){ const pt=TRACKS[curTrack]; fadeAudio(pt,0,0.06); setTimeout(()=>pt.pause(),700); }
-  fadeAudio(FOREST_AMB,0,0.05); setTimeout(()=>FOREST_AMB.pause(),700);
+  if(curTrack>=0){ const pt=TRACKS[curTrack]; fadeAudio(pt,0,0.06); schedulePause(pt,700); }
+  fadeAudio(FOREST_AMB,0,0.05); schedulePause(FOREST_AMB,700);
   curTrack=-1;
   playGameOver();
   spawnDeath(); bird.vy=0; bird.angle=75; trail=[];
