@@ -402,11 +402,21 @@ function updateBird(){
 }
 
 /* ── PIPES ───────────────────────────────────────────────────── */
-let pipes=[], lastPipe=0;
+let pipes=[], lastPipe=0, lastGapCenter=LH/2;
 function spawnPipe(now){
-  const gap=pipeGap(score), maxT=LH-GROUND_H-gap-PIPE_MIN_H;
-  const topH=PIPE_MIN_H+Math.random()*(maxT-PIPE_MIN_H);
-  pipes.push({x:LW+PIPE_W, topH, botY:topH+gap, passed:false});
+  const gap=pipeGap(score);
+  const minC=PIPE_MIN_H+gap/2, maxC=LH-GROUND_H-PIPE_MIN_H-gap/2;
+  // Limit how far the gap moves between consecutive pillars so every jump
+  // is physically makeable. Climbing is slower than diving, so the upward
+  // shift is clamped tighter than the downward one. Scales with spawn
+  // interval: more time between pillars = more allowed travel.
+  const frames=pipeInt(score)/16.7;
+  const maxUp=Math.min(frames*2.0,250), maxDown=Math.min(frames*3.0,320);
+  let c=minC+Math.random()*(maxC-minC);
+  c=Math.max(lastGapCenter-maxUp, Math.min(lastGapCenter+maxDown, c));
+  c=Math.max(minC, Math.min(maxC, c));
+  lastGapCenter=c;
+  pipes.push({x:LW+PIPE_W, topH:c-gap/2, botY:c+gap/2, passed:false});
   lastPipe=now;
 }
 function updatePipes(now){
@@ -429,7 +439,7 @@ function updatePipes(now){
     if(p.x+PIPE_W<-10) pipes.splice(i,1);
   }
 }
-function resetPipes(){ pipes=[]; lastPipe=0; curSpeed=BASE_SPEED; }
+function resetPipes(){ pipes=[]; lastPipe=0; curSpeed=BASE_SPEED; lastGapCenter=LH/2; }
 
 /* ── COLLISION ───────────────────────────────────────────────── */
 function collides(){
@@ -1315,9 +1325,151 @@ function drawHellPillar({x,topH,botY}){
   ctx.globalAlpha=1;
 }
 
-/* ── BIRD DRAW (pixel art) ───────────────────────────────────── */
+/* ── CHAMPION SPRITES (pixel art, one distinct design each) ──── */
+// All draw around origin facing right, ~±26 x / ±20 y, collision r unchanged.
+// wo = wing flap offset, ph = animation phase
+function drawPhoenix(c,wo,ph){
+  const tw=Math.round(Math.sin(ph*1.7)*2);
+  // Tail — three wavy flame streamers, yellow tips → red roots
+  ctx.fillStyle='#fde047'; ctx.fillRect(-30,-8+tw,8,3);
+  ctx.fillStyle='#fb923c'; ctx.fillRect(-25,-7+tw,11,4);
+  ctx.fillStyle='#fde047'; ctx.fillRect(-32,-1-tw,9,3);
+  ctx.fillStyle='#f97316'; ctx.fillRect(-26,-1,13,4);
+  ctx.fillStyle='#fde047'; ctx.fillRect(-29,5+tw,8,3);
+  ctx.fillStyle='#ea580c'; ctx.fillRect(-24,4+tw,11,4);
+  ctx.fillStyle='#7c2d12'; ctx.fillRect(-15,-3,5,8);
+  // Wing
+  ctx.fillStyle=c.wing; ctx.fillRect(-8,-12+wo,20,8);
+  ctx.fillStyle=c.whi;  ctx.fillRect(-6,-12+wo,16,4);
+  for(let i=0;i<4;i++){ ctx.fillStyle=i%2?'#fde047':c.wing; ctx.fillRect(-6+i*4,-15+wo,4,4); }
+  // Body with glowing belly band
+  ctx.fillStyle=c.body; ctx.fillRect(-10,-8,20,16);
+  ctx.fillStyle=c.hi;   ctx.fillRect(-8,-8,16,4);
+  ctx.fillStyle='#fde047'; ctx.fillRect(-6,2,12,3);
+  ctx.fillStyle=c.dark; ctx.fillRect(-10,6,20,2);
+  // Head
+  ctx.fillStyle=c.body; ctx.fillRect(8,-14,14,14);
+  ctx.fillStyle=c.hi;   ctx.fillRect(8,-14,14,4); ctx.fillRect(8,-10,4,10);
+  // Flame crest — flickering spikes
+  for(let i=0;i<3;i++){
+    const fh=5+Math.round(3*Math.abs(Math.sin(ph*2.3+i*1.4)));
+    ctx.fillStyle=['#fde047','#fb923c','#ef4444'][i];
+    ctx.fillRect(10+i*4,-14-fh,3,fh+3);
+  }
+  // Fierce eye with brow
+  ctx.fillStyle='#ffffff'; ctx.fillRect(16,-10,8,6);
+  ctx.fillStyle='#7c2d12'; ctx.fillRect(19,-10,4,4);
+  ctx.fillStyle='#ffffff'; ctx.fillRect(21,-10,2,2);
+  ctx.fillStyle='#7c2d12'; ctx.fillRect(15,-12,9,2);
+  // Beak
+  ctx.fillStyle='#fbbf24'; ctx.fillRect(22,-8,10,4); ctx.fillRect(22,-4,7,4);
+  ctx.fillStyle='#fde68a'; ctx.fillRect(22,-8,10,2);
+}
+function drawRaven(c,wo,ph){
+  // Shadow wisps trailing behind
+  const ga=ctx.globalAlpha;
+  ctx.globalAlpha=ga*0.35; ctx.fillStyle='#7c3aed';
+  ctx.fillRect(-30,-2+Math.round(Math.sin(ph*1.5)*2),6,2);
+  ctx.fillRect(-34,3-Math.round(Math.sin(ph*1.5)*2),5,2);
+  ctx.globalAlpha=ga;
+  // Long swept tail — stepped points
+  ctx.fillStyle=c.dark; ctx.fillRect(-26,-6,12,3); ctx.fillRect(-31,-8,7,3);
+  ctx.fillStyle=c.tail; ctx.fillRect(-24,-2,14,4); ctx.fillRect(-32,-3,9,3);
+  ctx.fillStyle=c.dark; ctx.fillRect(-25,2,11,3);  ctx.fillRect(-30,4,7,3);
+  // Wing — angular, swept back
+  ctx.fillStyle=c.wing; ctx.fillRect(-8,-12+wo,20,8);
+  ctx.fillStyle=c.whi;  ctx.fillRect(-4,-12+wo,12,3);
+  ctx.fillStyle=c.dark; ctx.fillRect(-13,-10+wo,6,5);
+  for(let i=0;i<3;i++){ ctx.fillStyle=c.wing; ctx.fillRect(-4+i*5,-15+wo,4,4); }
+  // Sleek body
+  ctx.fillStyle=c.body; ctx.fillRect(-10,-8,20,16);
+  ctx.fillStyle=c.hi;   ctx.fillRect(-8,-8,14,3);
+  ctx.fillStyle=c.dark; ctx.fillRect(-10,5,20,3);
+  // Head with dark hood
+  ctx.fillStyle=c.body; ctx.fillRect(8,-14,14,14);
+  ctx.fillStyle=c.dark; ctx.fillRect(8,-14,14,5);
+  ctx.fillStyle=c.hi;   ctx.fillRect(8,-14,14,2);
+  // Slicked-back crest
+  ctx.fillStyle=c.crest; ctx.fillRect(8,-17,6,3); ctx.fillRect(3,-15,6,3);
+  // Glowing violet eye, no sclera
+  ctx.fillStyle='#c4b5fd'; ctx.fillRect(17,-10,5,5);
+  ctx.fillStyle='#7c3aed'; ctx.fillRect(18,-9,3,3);
+  ctx.fillStyle='#ffffff'; ctx.fillRect(18,-9,1,1);
+  // Hooked beak
+  ctx.fillStyle=c.beak; ctx.fillRect(22,-9,9,4); ctx.fillRect(28,-5,3,3);
+  ctx.fillStyle=c.dark; ctx.fillRect(22,-5,6,3);
+}
+function drawHawk(c,wo,ph){
+  // Forked tail
+  ctx.fillStyle=c.tail; ctx.fillRect(-26,-7,14,4); ctx.fillRect(-26,3,14,4);
+  ctx.fillStyle=c.thi;  ctx.fillRect(-30,-8,5,3);  ctx.fillRect(-30,6,5,3);
+  ctx.fillStyle=c.dark; ctx.fillRect(-14,-3,5,6);
+  // Wing — extended point
+  ctx.fillStyle=c.wing; ctx.fillRect(-8,-12+wo,20,8);
+  ctx.fillStyle=c.whi;  ctx.fillRect(-6,-12+wo,16,4);
+  ctx.fillStyle=c.wing; ctx.fillRect(-13,-9+wo,5,4);
+  for(let i=0;i<4;i++){ ctx.fillStyle=i%2?c.whi:c.wing; ctx.fillRect(-6+i*4,-15+wo,4,4); }
+  // Body with pale chest patch
+  ctx.fillStyle=c.body; ctx.fillRect(-10,-8,20,16);
+  ctx.fillStyle=c.hi;   ctx.fillRect(-8,-8,16,4);
+  ctx.fillStyle='#e0f2fe'; ctx.fillRect(2,-2,8,8);
+  ctx.fillStyle=c.dark; ctx.fillRect(-10,6,20,2);
+  // Head
+  ctx.fillStyle=c.body; ctx.fillRect(8,-14,14,14);
+  ctx.fillStyle=c.hi;   ctx.fillRect(8,-14,14,4); ctx.fillRect(8,-10,3,10);
+  // Lightning-bolt crest
+  ctx.fillStyle='#fde047';
+  ctx.fillRect(12,-19,3,3); ctx.fillRect(14,-17,3,3); ctx.fillRect(11,-15,3,2);
+  // Static sparks
+  if(Math.sin(ph*4)>0.4){
+    ctx.fillStyle='#fef9c3';
+    ctx.fillRect(-14,-12+wo,2,2); ctx.fillRect(10,-17+wo,2,2);
+  }
+  // Raptor mask band + eye
+  ctx.fillStyle='#075985'; ctx.fillRect(14,-12,10,3);
+  ctx.fillStyle='#ffffff'; ctx.fillRect(16,-10,8,6);
+  ctx.fillStyle=c.eye;     ctx.fillRect(19,-9,4,4);
+  ctx.fillStyle='#ffffff'; ctx.fillRect(21,-9,2,2);
+  // Beak
+  ctx.fillStyle=c.beak; ctx.fillRect(22,-8,10,4); ctx.fillRect(22,-4,8,4);
+  ctx.fillStyle=c.hi;   ctx.fillRect(22,-8,10,2);
+}
+function drawOwl(c,wo,ph){
+  // Stubby tail
+  ctx.fillStyle=c.tail;    ctx.fillRect(-22,-3,12,7);
+  ctx.fillStyle='#6b3410'; ctx.fillRect(-22,-3,12,2);
+  // Rounded wing
+  ctx.fillStyle=c.wing; ctx.fillRect(-8,-11+wo,18,8);
+  ctx.fillStyle=c.whi;  ctx.fillRect(-6,-11+wo,14,3);
+  for(let i=0;i<3;i++){ ctx.fillStyle=i%2?c.whi:c.wing; ctx.fillRect(-4+i*5,-14+wo,4,4); }
+  // Plump body with barred chest
+  ctx.fillStyle=c.body; ctx.fillRect(-10,-8,20,17);
+  ctx.fillStyle=c.hi;   ctx.fillRect(-8,-8,16,3);
+  ctx.fillStyle='#fde68a'; ctx.fillRect(-2,-2,11,10);
+  ctx.fillStyle='#92400e'; ctx.fillRect(-1,0,9,2); ctx.fillRect(-1,4,9,2);
+  ctx.fillStyle=c.dark; ctx.fillRect(-10,7,20,2);
+  // Big round head, face turned to viewer
+  ctx.fillStyle=c.body; ctx.fillRect(4,-16,18,16); ctx.fillRect(2,-14,22,12);
+  ctx.fillStyle=c.hi;   ctx.fillRect(4,-16,18,3);
+  // Ear tufts
+  ctx.fillStyle=c.dark; ctx.fillRect(5,-20,4,5); ctx.fillRect(17,-20,4,5);
+  // Facial discs + wide eyes
+  ctx.fillStyle='#fef3c7'; ctx.fillRect(6,-12,8,8);  ctx.fillRect(15,-12,8,8);
+  ctx.fillStyle='#1a2e05'; ctx.fillRect(8,-10,4,4);  ctx.fillRect(17,-10,4,4);
+  ctx.fillStyle='#ffffff'; ctx.fillRect(9,-9,2,2);   ctx.fillRect(18,-9,2,2);
+  // Tiny hooked beak between the discs
+  ctx.fillStyle=c.beak; ctx.fillRect(13,-6,4,4); ctx.fillRect(14,-2,2,2);
+}
+function drawChampion(i,wo,ph){
+  const c=CHARS[i];
+  if(i===0) drawPhoenix(c,wo,ph);
+  else if(i===1) drawRaven(c,wo,ph);
+  else if(i===2) drawHawk(c,wo,ph);
+  else drawOwl(c,wo,ph);
+}
+
+/* ── BIRD DRAW ───────────────────────────────────────────────── */
 function drawBird(){
-  const c=CHARS[selectedChar];
   ctx.save();
   if(invulnTtl>0) ctx.globalAlpha=0.5+0.35*Math.sin(invulnTtl*0.5);
   ctx.translate(bird.x,bird.y);
@@ -1326,59 +1478,16 @@ function drawBird(){
 
   // Flame trail biome 3+
   if(biome>=3){
+    const ga=ctx.globalAlpha;
     for(let i=0;i<5;i++){
-      ctx.globalAlpha=(1-i/5)*.85;
+      ctx.globalAlpha=ga*(1-i/5)*.85;
       ctx.fillStyle=biome>=4?'#ff2200':'#ff8800';
       ctx.fillRect(-15-i*6, Math.round(Math.sin(bird.wing+i)*3)-3, 5, 6);
     }
-    ctx.globalAlpha=1;
+    ctx.globalAlpha=ga;
   }
 
-  // Tail — 3 stacked pixel feather bars
-  ctx.fillStyle=c.thi; ctx.fillRect(-26,-6,14,4);
-  ctx.fillStyle=c.tail; ctx.fillRect(-24,-2,16,4);
-  ctx.fillStyle=c.thi; ctx.fillRect(-26,2,14,4);
-  ctx.fillStyle=c.dark; ctx.fillRect(-14,-2,2,4); // root shadow
-
-  // Wing (behind body, animates up/down)
-  ctx.fillStyle=c.wing; ctx.fillRect(-8,-12+wo,20,8);
-  ctx.fillStyle=c.whi;  ctx.fillRect(-6,-12+wo,16,4);
-  // Feather tips row
-  for(let i=0;i<4;i++){
-    ctx.fillStyle=i%2===0?c.wing:c.whi;
-    ctx.fillRect(-6+i*4,-15+wo,4,4);
-  }
-
-  // Body
-  ctx.fillStyle=c.body; ctx.fillRect(-10,-8,20,16);
-  ctx.fillStyle=c.hi;   ctx.fillRect(-8,-8,16,4);   // top highlight row
-  ctx.fillStyle=c.dark; ctx.fillRect(-10,6,20,2);    // bottom shadow row
-  ctx.fillStyle='rgba(0,0,0,0.18)';
-  ctx.fillRect(-10,-2,2,8); ctx.fillRect(8,-2,2,8); // side depth
-
-  // Head
-  ctx.fillStyle=c.body; ctx.fillRect(8,-14,14,14);
-  ctx.fillStyle=c.hi;   ctx.fillRect(8,-14,14,4);   // head top highlight
-  ctx.fillRect(8,-10,4,10);                          // left edge highlight
-
-  // Crest — stepped pixel spikes
-  ctx.fillStyle=c.crest;
-  ctx.fillRect(10,-20,4,8);
-  ctx.fillRect(14,-18,4,6);
-  ctx.fillRect(18,-15,4,4);
-
-  // Eye socket + pupil + shine
-  ctx.fillStyle='#ffffff'; ctx.fillRect(16,-10,8,6);
-  ctx.fillStyle=c.eye;    ctx.fillRect(18,-10,4,4);
-  ctx.fillStyle='#ffffff'; ctx.fillRect(20,-10,2,2); // pixel shine
-
-  // Beak — two pixel bars forming open/closed triangle
-  ctx.fillStyle=c.beak;
-  ctx.fillRect(22,-8,10,4);   // upper mandible
-  ctx.fillRect(22,-4,8,4);    // lower mandible
-  ctx.fillStyle=c.hi;
-  ctx.fillRect(22,-8,10,2);   // beak highlight
-
+  drawChampion(selectedChar,wo,bird.wing);
   ctx.restore();
 }
 
@@ -1478,21 +1587,7 @@ function drawMiniChar(cx,cy,charIdx,selected){
   ctx.save();
   ctx.translate(cx,cy);
   ctx.scale(0.5,0.5);
-  ctx.fillStyle=c.thi;  ctx.fillRect(-26,-6,14,4);
-  ctx.fillStyle=c.tail; ctx.fillRect(-24,-2,16,4);
-  ctx.fillStyle=c.thi;  ctx.fillRect(-26,2,14,4);
-  ctx.fillStyle=c.wing; ctx.fillRect(-8,-12,20,8);
-  ctx.fillStyle=c.whi;  ctx.fillRect(-6,-12,16,4);
-  ctx.fillStyle=c.body; ctx.fillRect(-10,-8,20,16);
-  ctx.fillStyle=c.hi;   ctx.fillRect(-8,-8,16,4);
-  ctx.fillStyle=c.dark; ctx.fillRect(-10,6,20,2);
-  ctx.fillStyle=c.body; ctx.fillRect(8,-14,14,14);
-  ctx.fillStyle=c.hi;   ctx.fillRect(8,-14,14,4);
-  ctx.fillStyle=c.crest; ctx.fillRect(10,-20,4,8); ctx.fillRect(14,-18,4,6); ctx.fillRect(18,-15,4,4);
-  ctx.fillStyle='#ffffff'; ctx.fillRect(16,-10,8,6);
-  ctx.fillStyle=c.eye;    ctx.fillRect(18,-10,4,4);
-  ctx.fillStyle='#ffffff'; ctx.fillRect(20,-10,2,2);
-  ctx.fillStyle=c.beak; ctx.fillRect(22,-8,10,4); ctx.fillRect(22,-4,8,4);
+  drawChampion(charIdx,0,torchPhase);
   ctx.restore();
   if(selected){
     ctx.strokeStyle='#fbbf24'; ctx.lineWidth=2;
