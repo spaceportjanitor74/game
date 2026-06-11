@@ -104,7 +104,7 @@ const BIOMES = [
 ];
 function biomeOf(s){ let b=0; for(let i=0;i<BIOMES.length;i++) if(s>=BIOMES[i].at) b=i; return b; }
 function pipeSpeed(s){ return BASE_SPEED+(MAX_SPEED-BASE_SPEED)*Math.min(s/80,1); }
-function pipeGap(s)  { return BASE_GAP-(BASE_GAP-MIN_GAP)*Math.min(s/70,1); }
+function pipeGap(s)  { return BASE_GAP-(BASE_GAP-MIN_GAP)*Math.min(s/70,1)+(hasAbility('Keen Sight')?10:0); }
 function pipeInt(s)  { return BASE_INTERVAL-(BASE_INTERVAL-MIN_INTERVAL)*Math.min(s/70,1); }
 
 /* ── AUDIO ───────────────────────────────────────────────────── */
@@ -196,6 +196,99 @@ function playMilestone(){
     });
   }catch(e){}
 }
+function playDice(){
+  if(muted) return;
+  try{
+    const ac=getSfx(); if(ac.state==='suspended') ac.resume();
+    for(let i=0;i<6;i++){
+      const t=ac.currentTime+i*0.075+Math.random()*0.02, dur=0.03;
+      const buf=ac.createBuffer(1,Math.floor(ac.sampleRate*dur),ac.sampleRate);
+      const d=buf.getChannelData(0);
+      for(let j=0;j<d.length;j++) d[j]=(Math.random()*2-1)*(1-j/d.length);
+      const src=ac.createBufferSource(); src.buffer=buf;
+      const filt=ac.createBiquadFilter(); filt.type='highpass'; filt.frequency.value=1700;
+      const g=ac.createGain(); g.gain.setValueAtTime(0.18,t);
+      src.connect(filt); filt.connect(g); g.connect(ac.destination);
+      src.start(t);
+    }
+  }catch(e){}
+}
+function playBless(){
+  if(muted) return;
+  try{
+    const ac=getSfx(); if(ac.state==='suspended') ac.resume();
+    [660,880,1320].forEach((f,i)=>{
+      const t=ac.currentTime+i*0.09;
+      const o=ac.createOscillator(); o.type='sine'; o.frequency.setValueAtTime(f,t);
+      const g=ac.createGain(); g.gain.setValueAtTime(0,t);
+      g.gain.linearRampToValueAtTime(0.14,t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.001,t+0.5);
+      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+0.55);
+    });
+  }catch(e){}
+}
+function playCurse(){
+  if(muted) return;
+  try{
+    const ac=getSfx(); if(ac.state==='suspended') ac.resume();
+    const dur=0.6;
+    const o=ac.createOscillator(); o.type='sawtooth';
+    o.frequency.setValueAtTime(180,ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(55,ac.currentTime+dur);
+    const g=ac.createGain();
+    g.gain.setValueAtTime(0.16,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+dur);
+    o.connect(g); g.connect(ac.destination);
+    o.start(); o.stop(ac.currentTime+dur+0.02);
+  }catch(e){}
+}
+function playWardBreak(){
+  if(muted) return;
+  try{
+    const ac=getSfx(); if(ac.state==='suspended') ac.resume();
+    const dur=0.18;
+    const buf=ac.createBuffer(1,Math.floor(ac.sampleRate*dur),ac.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let j=0;j<d.length;j++) d[j]=(Math.random()*2-1)*Math.pow(1-j/d.length,1.4);
+    const src=ac.createBufferSource(); src.buffer=buf;
+    const filt=ac.createBiquadFilter(); filt.type='bandpass';
+    filt.frequency.value=2600; filt.Q.value=0.8;
+    const g=ac.createGain(); g.gain.setValueAtTime(0.30,ac.currentTime);
+    src.connect(filt); filt.connect(g); g.connect(ac.destination);
+    src.start(); src.stop(ac.currentTime+dur+0.01);
+    const o=ac.createOscillator(); o.type='sine';
+    o.frequency.setValueAtTime(1400,ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(850,ac.currentTime+0.16);
+    const og=ac.createGain();
+    og.gain.setValueAtTime(0.14,ac.currentTime);
+    og.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.16);
+    o.connect(og); og.connect(ac.destination);
+    o.start(); o.stop(ac.currentTime+0.18);
+  }catch(e){}
+}
+function playRebirth(){
+  if(muted) return;
+  try{
+    const ac=getSfx(); if(ac.state==='suspended') ac.resume();
+    const o=ac.createOscillator(); o.type='sine';
+    o.frequency.setValueAtTime(200,ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(900,ac.currentTime+0.45);
+    const g=ac.createGain();
+    g.gain.setValueAtTime(0.001,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.20,ac.currentTime+0.30);
+    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.55);
+    o.connect(g); g.connect(ac.destination);
+    o.start(); o.stop(ac.currentTime+0.58);
+    [880,1100].forEach((f,i)=>{
+      const t=ac.currentTime+0.35+i*0.10;
+      const o2=ac.createOscillator(); o2.type='triangle'; o2.frequency.setValueAtTime(f,t);
+      const g2=ac.createGain(); g2.gain.setValueAtTime(0,t);
+      g2.gain.linearRampToValueAtTime(0.13,t+0.02);
+      g2.gain.exponentialRampToValueAtTime(0.001,t+0.4);
+      o2.connect(g2); g2.connect(ac.destination); o2.start(t); o2.stop(t+0.45);
+    });
+  }catch(e){}
+}
 function unlockAudio(){
   if(audioUnlocked) return; audioUnlocked=true; getSfx();
   // iOS/iPadOS requires play() on each element during the user gesture.
@@ -266,23 +359,33 @@ let shakeAmt=0, closeCooldown=0, closeCallFlash=0;
 let milestoneText='', milestoneTtl=0;
 let biomeAnnName='', biomeAnnTtl=0;
 
+/* ── FATE DIE & ABILITIES (tabletop-fantasy layer) ───────────── */
+const FATE_FIRST=7, FATE_EVERY=10; // rolls at 7, 17, 27… (clear of milestones)
+let ward=false, invulnTtl=0, rebirthUsed=false;
+let curseTtl=0, blessTtl=0;
+let fateAnim=0, fateFace=1, fateDieTtl=0, fateCol='#c4b5fd';
+let nextFate=FATE_FIRST;
+let noticeText='', noticeCol='#fff', noticeTtl=0;
+function notice(t,c){ noticeText=t; noticeCol=c; noticeTtl=1; }
+
 /* ── SELECTABLE CHARACTERS ───────────────────────────────────── */
 const CHARS = [
-  {name:'Phoenix',
+  {name:'Phoenix', ability:'Rebirth', abilityDesc:'rises from death once per quest',
    body:'#c2410c',hi:'#fb923c',dark:'#7c2d12',wing:'#ea580c',whi:'#fed7aa',
    tail:'#fcd34d',thi:'#fef9c3',beak:'#fbbf24',eye:'#431407',crest:'#f97316',spark:'#fcd34d'},
-  {name:'Shadow Raven',
+  {name:'Shadow Raven', ability:'Fortune', abilityDesc:'rolls the fate die twice, keeps the better',
    body:'#312e81',hi:'#818cf8',dark:'#1e1b4b',wing:'#4338ca',whi:'#a5b4fc',
    tail:'#6366f1',thi:'#e0e7ff',beak:'#c4b5fd',eye:'#0f0a1a',crest:'#7c3aed',spark:'#818cf8'},
-  {name:'Storm Hawk',
+  {name:'Storm Hawk', ability:'Glide', abilityDesc:'falls more gently on the wind',
    body:'#0284c7',hi:'#7dd3fc',dark:'#0369a1',wing:'#0ea5e9',whi:'#bae6fd',
    tail:'#22d3ee',thi:'#cffafe',beak:'#fbbf24',eye:'#0c4a6e',crest:'#06b6d4',spark:'#7dd3fc'},
-  {name:'Forest Owl',
+  {name:'Forest Owl', ability:'Keen Sight', abilityDesc:'spies wider paths between perils',
    body:'#4d7c0f',hi:'#a3e635',dark:'#1a2e05',wing:'#3f6212',whi:'#84cc16',
    tail:'#92400e',thi:'#fde68a',beak:'#d97706',eye:'#1a2e05',crest:'#65a30d',spark:'#a3e635'},
 ];
 let selectedChar = parseInt(lsGet('gauntlet_char','0'),10);
 if(selectedChar<0||selectedChar>=CHARS.length) selectedChar=0;
+const hasAbility=n=>CHARS[selectedChar].ability===n;
 
 /* ── BIRD ────────────────────────────────────────────────────── */
 const bird = {x:BIRD_X,y:LH/2,vy:0,angle:0,wing:0};
@@ -290,7 +393,7 @@ function resetBird(){ Object.assign(bird,{x:BIRD_X,y:LH/2,vy:0,angle:0,wing:0});
 function flap(){ bird.vy=JUMP_VEL; bird.wing=0; spawnMagic(); playFlap(); }
 let held=false;
 function updateBird(){
-  bird.vy += GRAVITY;
+  bird.vy += hasAbility('Glide')?GRAVITY*0.86:GRAVITY;
   if(held && state===S.PLAY){ bird.vy -= HOLD_LIFT; bird.vy=Math.max(bird.vy,-3.2); }
   bird.y += bird.vy;
   const ta=(bird.vy/10)*ANG_DOWN;
@@ -307,7 +410,7 @@ function spawnPipe(now){
   lastPipe=now;
 }
 function updatePipes(now){
-  curSpeed=pipeSpeed(score);
+  curSpeed=pipeSpeed(score)*(curseTtl>0?1.35:blessTtl>0?0.80:1);
   if(now-lastPipe>pipeInt(score)) spawnPipe(now);
   for(let i=pipes.length-1;i>=0;i--){
     const p=pipes[i]; p.x-=curSpeed;
@@ -321,6 +424,7 @@ function updatePipes(now){
       }
       const nb=biomeOf(score);
       if(nb!==biome){ biome=nb; fadeAlpha=1.0; crossfadeTrack(nb); biomeAnnName=BIOMES[nb].name.toUpperCase(); biomeAnnTtl=1.0; }
+      if(score>=nextFate){ nextFate+=FATE_EVERY; startFateRoll(); }
     }
     if(p.x+PIPE_W<-10) pipes.splice(i,1);
   }
@@ -369,6 +473,16 @@ function updateParts(){
   if(closeCallFlash>0) closeCallFlash=Math.max(0,closeCallFlash-0.07);
   if(milestoneTtl>0) milestoneTtl=Math.max(0,milestoneTtl-0.020);
   if(biomeAnnTtl>0) biomeAnnTtl=Math.max(0,biomeAnnTtl-0.006);
+  if(curseTtl>0) curseTtl--;
+  if(blessTtl>0) blessTtl--;
+  if(invulnTtl>0) invulnTtl--;
+  if(noticeTtl>0) noticeTtl=Math.max(0,noticeTtl-0.012);
+  if(fateDieTtl>0) fateDieTtl=Math.max(0,fateDieTtl-0.010);
+  if(fateAnim>0&&state===S.PLAY){
+    fateAnim--;
+    if(fateAnim%4===0) fateFace=1+Math.floor(Math.random()*20);
+    if(fateAnim===0) resolveFate();
+  }
   for(let i=parts.length-1;i>=0;i--){
     const p=parts[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=0.2; p.life-=0.04;
     if(p.life<=0) parts.splice(i,1);
@@ -387,6 +501,61 @@ function updateParts(){
     if(magic.length>8) magic.length=8;
   }
 }
+/* ── FATE DIE LOGIC ──────────────────────────────────────────── */
+function rollD20(){ return 1+Math.floor(Math.random()*20); }
+function startFateRoll(){ fateAnim=52; fateDieTtl=0; playDice(); }
+function resolveFate(){
+  let r=rollD20();
+  if(hasAbility('Fortune')) r=Math.max(r,rollD20());
+  fateFace=r; fateDieTtl=1;
+  if(r===1){ curseTtl=360; blessTtl=0; fateCol='#ff5544';
+    notice('CURSE OF HASTE!','#ff5544'); playCurse(); }
+  else if(r<10){ fateCol='#9ca3af'; notice('The fates are silent…','#9ca3af'); }
+  else if(r<15){ blessTtl=240; curseTtl=0; fateCol='#7dd3fc';
+    notice("ZEPHYR'S BLESSING","#7dd3fc"); playBless(); }
+  else if(r<20){ ward=true; fateCol='#a78bfa';
+    notice('ARCANE WARD!','#a78bfa'); playBless(); }
+  else { ward=true; blessTtl=480; curseTtl=0; fateCol='#fbbf24';
+    notice('FATE SMILES UPON YOU!','#fbbf24'); playBless(); spawnFateBurst(); }
+}
+function spawnFateBurst(){
+  for(let i=0;i<18;i++){
+    const a=Math.PI*2*i/18, sp=1.5+Math.random()*3;
+    magic.push({x:bird.x,y:bird.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+      life:1,r:2+Math.random()*3,c:'#fcd34d'});
+  }
+}
+function spawnWardShatter(){
+  for(let i=0;i<14;i++){
+    const a=Math.PI*2*i/14, sp=2.5+Math.random()*2.5;
+    parts.push({x:bird.x,y:bird.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+      life:1,r:2+Math.random()*3,c:i%2?'#a78bfa':'#e0e7ff'});
+  }
+}
+function spawnRebirthBurst(){
+  for(let i=0;i<22;i++){
+    const a=Math.PI*2*i/22, sp=2+Math.random()*4;
+    parts.push({x:bird.x,y:bird.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+      life:1,r:2.5+Math.random()*4,c:i%2?'#fb923c':'#fcd34d'});
+  }
+}
+// Collision outcome — ward and rebirth intercept death
+function onHit(){
+  if(ward){
+    ward=false; invulnTtl=80; shakeAmt=5;
+    bird.vy=JUMP_VEL; bird.y=Math.max(60,Math.min(bird.y,LH-GROUND_H-60));
+    playWardBreak(); spawnWardShatter(); notice('WARD SHATTERED!','#a78bfa');
+    return;
+  }
+  if(hasAbility('Rebirth')&&!rebirthUsed){
+    rebirthUsed=true; invulnTtl=120; shakeAmt=6;
+    bird.vy=JUMP_VEL; bird.y=Math.max(60,Math.min(bird.y,LH-GROUND_H-80));
+    playRebirth(); spawnRebirthBurst(); notice('REBORN IN FLAME!','#fb923c');
+    return;
+  }
+  die();
+}
+
 function spawnEmber(heavy){
   const rate=isMobile?(heavy?.30:.12):(heavy?.55:.22);
   if(Math.random()<rate)
@@ -1150,6 +1319,7 @@ function drawHellPillar({x,topH,botY}){
 function drawBird(){
   const c=CHARS[selectedChar];
   ctx.save();
+  if(invulnTtl>0) ctx.globalAlpha=0.5+0.35*Math.sin(invulnTtl*0.5);
   ctx.translate(bird.x,bird.y);
   ctx.rotate(bird.angle*Math.PI/180);
   const wo=Math.round(Math.sin(bird.wing)*5); // wing flap offset
@@ -1210,6 +1380,96 @@ function drawBird(){
   ctx.fillRect(22,-8,10,2);   // beak highlight
 
   ctx.restore();
+}
+
+/* ── ARCANE WARD BUBBLE ──────────────────────────────────────── */
+function drawWard(){
+  if(!ward) return;
+  ctx.save();
+  ctx.translate(bird.x,bird.y);
+  ctx.globalAlpha=0.50+0.20*Math.sin(torchPhase*2);
+  ctx.strokeStyle='#a78bfa'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(0,0,27,0,Math.PI*2); ctx.stroke();
+  ctx.fillStyle='#c4b5fd';
+  for(let i=0;i<4;i++){
+    const a=torchPhase+i*Math.PI/2;
+    ctx.fillRect(Math.round(Math.cos(a)*27)-2,Math.round(Math.sin(a)*27)-2,4,4);
+  }
+  ctx.restore();
+}
+
+/* ── FATE DIE OVERLAY ────────────────────────────────────────── */
+function drawFateDie(){
+  if(fateAnim<=0&&fateDieTtl<=0) return;
+  const rolling=fateAnim>0;
+  const a=rolling?1:(fateDieTtl<0.25?fateDieTtl*4:1);
+  const dx=LW/2, dy=126, R=20;
+  const col=rolling?'#c4b5fd':fateCol;
+  ctx.save(); ctx.globalAlpha=a;
+  ctx.translate(dx,dy);
+  const rot=rolling?fateAnim*0.25:0;
+  ctx.rotate(rot);
+  // d20 face: hexagonal silhouette with inner triangle
+  ctx.fillStyle='rgba(10,5,25,0.85)';
+  ctx.strokeStyle=col; ctx.lineWidth=2;
+  ctx.beginPath();
+  for(let i=0;i<6;i++){
+    const an=-Math.PI/2+i*Math.PI/3;
+    i?ctx.lineTo(Math.cos(an)*R,Math.sin(an)*R):ctx.moveTo(Math.cos(an)*R,Math.sin(an)*R);
+  }
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.globalAlpha=a*0.45;
+  ctx.beginPath();
+  for(let i=0;i<3;i++){
+    const an=-Math.PI/2+i*Math.PI*2/3;
+    i?ctx.lineTo(Math.cos(an)*R,Math.sin(an)*R):ctx.moveTo(Math.cos(an)*R,Math.sin(an)*R);
+  }
+  ctx.closePath(); ctx.stroke();
+  ctx.globalAlpha=a;
+  ctx.rotate(-rot);
+  ctx.fillStyle=col; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 14px Georgia';
+  ctx.fillText(fateFace,0,1);
+  ctx.font='bold 9px Georgia';
+  ctx.fillStyle='rgba(196,181,253,0.8)';
+  ctx.fillText('FATE',0,-R-10);
+  ctx.restore();
+}
+function drawNotice(){
+  if(noticeTtl<=0) return;
+  const a=noticeTtl<0.25?noticeTtl*4:1;
+  ctx.save(); ctx.globalAlpha=a;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='bold 20px Georgia';
+  const ny=Math.round(LH/2-105);
+  ctx.strokeStyle='rgba(0,0,0,0.85)'; ctx.lineWidth=5;
+  ctx.strokeText(noticeText,LW/2,ny);
+  ctx.fillStyle=noticeCol; ctx.fillText(noticeText,LW/2,ny);
+  ctx.restore();
+}
+
+/* ── STATUS BADGES (under score) ─────────────────────────────── */
+function drawStatus(){
+  const items=[];
+  if(ward) items.push(['🛡','#a78bfa']);
+  if(hasAbility('Rebirth')&&!rebirthUsed) items.push(['🔥','#fb923c']);
+  if(curseTtl>0) items.push(['☠ '+Math.ceil(curseTtl/60),'#ff5544']);
+  if(blessTtl>0) items.push(['✨ '+Math.ceil(blessTtl/60),'#7dd3fc']);
+  if(!items.length) return;
+  ctx.save();
+  ctx.font='12px Georgia'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  let x=LW/2-(items.length*38)/2+19;
+  for(const [txt,col] of items){
+    ctx.fillStyle='rgba(0,0,0,0.5)'; rr(x-17,84,34,18,5); ctx.fill();
+    ctx.fillStyle=col; ctx.fillText(txt,x,94);
+    x+=38;
+  }
+  ctx.restore();
+}
+function drawCurseVignette(){
+  if(curseTtl<=0) return;
+  ctx.strokeStyle=`rgba(255,40,20,${(0.22+0.14*Math.sin(torchPhase*2)).toFixed(2)})`;
+  ctx.lineWidth=10; ctx.strokeRect(5,5,LW-10,LH-10);
 }
 
 /* ── MINI CHARACTER PORTRAIT ─────────────────────────────────── */
@@ -1409,9 +1669,12 @@ function drawStart(now){
   const charXs=[LW/2-90,LW/2-30,LW/2+30,LW/2+90];
   for(let i=0;i<CHARS.length;i++) drawMiniChar(charXs[i],cy+62,i,i===selectedChar);
   ctx.textBaseline='middle';
-  if(best>0){ ctx.font='14px Georgia'; ctx.fillStyle='#fbbf24'; ctx.fillText('Best: '+best+' pipes',LW/2,cy+100); }
-  ctx.font='12px Georgia'; ctx.fillStyle='#4b5563';
-  ctx.fillText(isMobile?'Tap & hold to float':'SPACE or click & hold to float',LW/2,cy+112);
+  const ab=CHARS[selectedChar];
+  ctx.font='italic 11px Georgia'; ctx.fillStyle='#fbbf24';
+  ctx.fillText('✦ '+ab.ability+' — '+ab.abilityDesc,LW/2,cy+97);
+  if(best>0){ ctx.font='12px Georgia'; ctx.fillStyle='#c4b5fd'; ctx.fillText('Best: '+best+' pipes',LW/2,cy+110); }
+  ctx.font='11px Georgia'; ctx.fillStyle='#4b5563';
+  ctx.fillText(isMobile?'Tap & hold to float':'SPACE or click & hold to float',LW/2,cy+122);
   ctx.globalAlpha=pulse;
   btn(LW/2,cy+130,224,52,'⚔  BEGIN QUEST','#7c3aed','#4c1d95');
   ctx.globalAlpha=1;
@@ -1446,7 +1709,7 @@ function drawDead(){
   for(let i=0;i<CHARS.length;i++) drawMiniChar(charXs[i],cy+72,i,i===selectedChar);
   ctx.textBaseline='middle';
   btn(LW/2,cy+106,234,52,'↺  TRY AGAIN','#7c3aed','#4c1d95');
-  const tips=['Hold Space to float!','Gaps are wide early – find your rhythm','Speed grows as you progress','Can you reach the Hellscape?'];
+  const tips=['Hold Space to float!','The fate die rolls every 10 pillars','A natural 20 turns the tide','An Arcane Ward shields one blow','The Phoenix rises once from death','The Raven rolls fate twice','Can you reach the Hellscape?'];
   ctx.font='13px Georgia'; ctx.fillStyle='#4b5563';
   ctx.fillText(tips[score%tips.length],LW/2,cy+170);
 }
@@ -1502,8 +1765,8 @@ function loop(now){
     drawGround(); drawParts(); drawBird(); drawStart(now); drawMuteBtn();
   } else if(state===S.PLAY){
     updateBird(); updatePipes(now); updateGround(); updateParts(); spawnTrail(); updateTrail();
-    drawPipes(); drawGround(); drawParts(); drawTrail(); drawBird(); drawScore(); drawFlash(); drawCloseCallFlash(); drawMilestonePop(); drawBiomeAnn();
-    if(collides()) die();
+    drawPipes(); drawGround(); drawParts(); drawTrail(); drawBird(); drawWard(); drawScore(); drawStatus(); drawFlash(); drawCloseCallFlash(); drawCurseVignette(); drawMilestonePop(); drawBiomeAnn(); drawFateDie(); drawNotice();
+    if(invulnTtl<=0&&collides()) onHit();
   } else {
     updateGround(); updateParts(); updateTrail();
     drawPipes(); drawGround(); drawParts(); drawTrail(); drawBird(); drawScore(); drawFlash(); drawDead();
@@ -1526,6 +1789,8 @@ function go(){
   score=0; state=S.PLAY; held=false; biome=0; fadeAlpha=0;
   embers=[]; parts=[]; magic=[]; trail=[];
   shakeAmt=0; milestoneTtl=0; biomeAnnTtl=0; closeCallFlash=0;
+  ward=false; invulnTtl=0; rebirthUsed=false; curseTtl=0; blessTtl=0;
+  fateAnim=0; fateDieTtl=0; noticeTtl=0; nextFate=FATE_FIRST;
   lastPipe=performance.now()-(BASE_INTERVAL-950);
   stopAudio(MENU_MUS); stopAudio(OVER_MUS);
   crossfadeTrack(0);
