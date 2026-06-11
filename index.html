@@ -43,37 +43,109 @@ if(window.visualViewport) window.visualViewport.addEventListener('resize', resiz
 document.addEventListener('contextmenu', e=>e.preventDefault());
 resize();
 
-/* ── IMAGE PRELOAD ───────────────────────────────────────────── */
-const IMGS = {};
-let imgsLoaded = 0;
-const IMG_DEFS = [
-  // Biome 0 – Sunlit Forest (CC0, MatiasVME / opengameart.org)
-  ['b0_sky',    'bg/b0_sky.png'],
-  ['b0_clouds', 'bg/b0_clouds.png'],
-  ['b0_mtn1',   'bg/b0_mtn1.png'],
-  ['b0_mtn2',   'bg/b0_mtn2.png'],
-  ['b0_mtn3',   'bg/b0_mtn3.png'],
-  ['b0_rocks',  'bg/b0_rocks.png'],
-  ['b0_trees',  'bg/b0_trees.png'],
-  // Biome 1 – Enchanted Forest (CC-BY 4.0, Admurin / admurin.itch.io)
-  ['b1_0','bg/b1_0.png'],['b1_1','bg/b1_1.png'],['b1_2','bg/b1_2.png'],
-  ['b1_3','bg/b1_3.png'],['b1_4','bg/b1_4.png'],['b1_5','bg/b1_5.png'],['b1_6','bg/b1_6.png'],
-  // Biome 2 – Mossy Fortress (CC0, ansimuz / opengameart.org – Gothicvania)
-  ['b2_back','bg/b2_back.png'],['b2_mid','bg/b2_mid.png'],['b2_col','bg/b2_col.png'],
-  // Biome 3 – Lava Cavern (CC-BY 4.0, Admurin)
-  ['b3_0','bg/b3_0.png'],['b3_1','bg/b3_1.png'],['b3_2','bg/b3_2.png'],
-  ['b3_3','bg/b3_3.png'],['b3_4','bg/b3_4.png'],['b3_5','bg/b3_5.png'],
-  // Biome 4 – Volcanic Hellscape (CC0, Tio Aimar / opengameart.org)
-  ['b4_1','bg/b4_1.png'],['b4_2','bg/b4_2.png'],['b4_3','bg/b4_3.png'],
-  ['b4_4','bg/b4_4.png'],['b4_5','bg/b4_5.png'],['b4_6','bg/b4_6.png'],
-];
-const imgsTotal = IMG_DEFS.length;
-IMG_DEFS.forEach(([key,src])=>{
-  const img = new Image();
-  img.onload  = ()=>{ IMGS[key]=img; imgsLoaded++; };
-  img.onerror = ()=>{ imgsLoaded++; }; // fail gracefully, canvas fallbacks kick in
-  img.src = src;
-});
+/* ── PROCEDURAL ART KIT ──────────────────────────────────────── */
+// The entire world is drawn in code — flat layered silhouettes over
+// atmospheric gradient skies, with glow accents. No image assets.
+function hash(n){ const s=Math.sin(n*127.1+311.7)*43758.5453; return s-Math.floor(s); }
+function noise1(x){
+  const i=Math.floor(x), f=x-i, u=(1-Math.cos(f*Math.PI))/2;
+  return hash(i)*(1-u)+hash(i+1)*u;
+}
+function skyGrad(stops){
+  const g=ctx.createLinearGradient(0,0,0,LH-GROUND_H);
+  for(const [p,c] of stops) g.addColorStop(p,c);
+  ctx.fillStyle=g; ctx.fillRect(0,0,LW,LH-GROUND_H);
+}
+// Rolling silhouette ridge, world-anchored so it scrolls seamlessly
+function ridge(depth,baseY,amp,freq,col,seed){
+  const off=worldX*depth;
+  ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(-3,LH);
+  for(let x=-3;x<=LW+3;x+=8){
+    const wx=(x+off)*freq+seed*37.7;
+    ctx.lineTo(x,baseY-(noise1(wx)*0.72+noise1(wx*2.7+5)*0.28)*amp);
+  }
+  ctx.lineTo(LW+3,LH); ctx.closePath(); ctx.fill();
+}
+// Same, hanging from the ceiling
+function ceilRidge(depth,baseY,amp,freq,col,seed){
+  const off=worldX*depth;
+  ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(-3,-3);
+  for(let x=-3;x<=LW+3;x+=8){
+    const wx=(x+off)*freq+seed*37.7;
+    ctx.lineTo(x,baseY+(noise1(wx)*0.72+noise1(wx*2.7+5)*0.28)*amp);
+  }
+  ctx.lineTo(LW+3,-3); ctx.closePath(); ctx.fill();
+}
+// World-anchored repeating decorations: fn(screenX, 0..1 variation)
+function row(depth,spacing,seed,fn){
+  const off=worldX*depth, first=Math.floor(off/spacing)-1;
+  for(let i=first;i*spacing-off<LW+spacing;i++) fn(i*spacing-off,hash(i*13.37+seed));
+}
+function circle(x,y,r){ ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); }
+function cloud(x,y,r,col){
+  ctx.fillStyle=col;
+  for(const [dx,dy,dr] of [[0,-0.1,0.62],[-0.85,0.16,0.45],[0.85,0.18,0.5],[0,0.3,0.52]])
+    circle(x+dx*r,y+dy*r,r*dr);
+}
+function pine(x,baseY,h,w,col){
+  ctx.fillStyle=col; ctx.beginPath();
+  ctx.moveTo(x,baseY-h);
+  ctx.quadraticCurveTo(x+w*0.12,baseY-h*0.5,x+w/2,baseY);
+  ctx.lineTo(x-w/2,baseY);
+  ctx.quadraticCurveTo(x-w*0.12,baseY-h*0.5,x,baseY-h);
+  ctx.fill();
+}
+function roundTree(x,baseY,h,w,col){
+  ctx.fillStyle=col;
+  ctx.fillRect(x-w*0.08,baseY-h*0.5,w*0.16,h*0.55);
+  ctx.beginPath(); ctx.ellipse(x,baseY-h*0.64,w*0.5,h*0.4,0,0,Math.PI*2); ctx.fill();
+}
+function spike(x,fromY,len,w,col,down){
+  const d=down?1:-1;
+  ctx.fillStyle=col; ctx.beginPath();
+  ctx.moveTo(x-w/2,fromY);
+  ctx.quadraticCurveTo(x-w*0.1,fromY+d*len*0.5,x,fromY+d*len);
+  ctx.quadraticCurveTo(x+w*0.1,fromY+d*len*0.5,x+w/2,fromY);
+  ctx.closePath(); ctx.fill();
+}
+// Teardrop flame/feather: base (bx,by) of half-width w, tip at (tipX,tipY)
+function flameUp(bx,by,tipX,tipY,w,col){
+  ctx.fillStyle=col; ctx.beginPath();
+  ctx.moveTo(bx-w,by);
+  ctx.quadraticCurveTo((bx+tipX)/2-w*1.5,(by+tipY)/2,tipX,tipY);
+  ctx.quadraticCurveTo((bx+tipX)/2+w*1.5,(by+tipY)/2,bx+w,by);
+  ctx.closePath(); ctx.fill();
+}
+function glowOrb(x,y,r,halo){
+  const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,halo); g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g; circle(x,y,r);
+}
+// Pulsing wisp marking the safe gap at a pillar lip
+function gapGlow(x,y,halo,core){
+  const p=0.75+0.25*Math.sin(torchPhase);
+  glowOrb(x,y,24*p,halo);
+  ctx.globalAlpha=p; ctx.fillStyle=core; circle(x,y,3.2); ctx.globalAlpha=1;
+}
+// Jagged tooth fringe hanging off a pillar lip (decorative, outside hitbox)
+function toothEdge(x,w,yBase,dir,col,seed,maxT){
+  ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(x,yBase);
+  const n=5;
+  for(let i=0;i<n;i++){
+    ctx.lineTo(x+(i+0.5)*w/n, yBase+dir*(7+hash(seed+i)*maxT));
+    ctx.lineTo(x+(i+1)*w/n, yBase);
+  }
+  ctx.closePath(); ctx.fill();
+}
+// Foliage cluster (canopy) centered on a pillar lip
+function blobs(cx,cy,w,h,col,hi){
+  ctx.fillStyle=col;
+  for(const [dx,dy,r] of [[0,-0.06,0.5],[-0.32,0.10,0.36],[0.32,0.10,0.36],[-0.16,-0.2,0.3],[0.18,-0.22,0.3]]){
+    ctx.beginPath(); ctx.ellipse(cx+dx*w,cy+dy*h,w*r*0.6,h*r,0,0,Math.PI*2); ctx.fill();
+  }
+  ctx.fillStyle=hi;
+  ctx.beginPath(); ctx.ellipse(cx-w*0.1,cy-h*0.16,w*0.2,h*0.18,0,0,Math.PI*2); ctx.fill();
+}
 
 /* ── TUNING ─────────────────────────────────────────────────── */
 const GRAVITY       = 0.16;
@@ -593,46 +665,6 @@ function rr(x,y,w,h,r){
   ctx.closePath();
 }
 
-/* ── CORE PARALLAX DRAW ──────────────────────────────────────── */
-// Draws a tiling image layer at the given parallax depth.
-// depth 0 = static, 1 = moves at same speed as pipes.
-// scaleH: target height to scale image to (default = full bg area)
-// anchorY: y offset to draw at (default 0)
-function drawBGLayer(img, depth, scaleH, anchorY){
-  if(!img) return;
-  const bgH = LH - GROUND_H;
-  const dstH = scaleH || bgH;
-  const sc   = dstH / img.naturalHeight;
-  const dstW = img.naturalWidth * sc;
-  if(dstW<=0) return;
-  const off = (worldX * depth) % dstW;
-  const y   = anchorY || 0;
-  let x = -off;
-  while(x < LW + 1){
-    ctx.drawImage(img, x, y, dstW, dstH);
-    x += dstW;
-  }
-}
-
-/* ── TORCH HELPER ────────────────────────────────────────────── */
-function drawTorches(col){
-  const fl=.7+.3*Math.sin(torchPhase);
-  const spacing=145, tW=spacing*4, off=(worldX)%tW;
-  for(let i=0;i<5;i++){
-    const tx=((i*spacing-off+tW*2)%tW)-10;
-    if(tx<-20||tx>LW+20) continue;
-    const ty=LH*.24;
-    ctx.fillStyle='#78716c'; ctx.fillRect(tx-3,ty,6,18); ctx.fillRect(tx-6,ty+13,12,4);
-    const gg=ctx.createRadialGradient(tx,ty-4,0,tx,ty-4,22*fl);
-    gg.addColorStop(0,col||'rgba(251,191,36,.55)'); gg.addColorStop(1,'rgba(255,100,0,0)');
-    ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(tx,ty-4,24*fl,0,Math.PI*2); ctx.fill();
-    ctx.globalAlpha=fl; ctx.fillStyle=col||'#fbbf24';
-    ctx.beginPath(); ctx.moveTo(tx,ty-18); ctx.quadraticCurveTo(tx+5,ty-9,tx,ty);
-    ctx.quadraticCurveTo(tx-5,ty-9,tx,ty-18); ctx.fill();
-    ctx.globalAlpha=1;
-  }
-}
-
 function drawBats(count,rateX,yMin,yMax,sz,col,glowEyes){
   const spacing=Math.round((LW+sz*14)/count);
   const batOff=(worldX*rateX)%spacing;
@@ -665,352 +697,227 @@ function drawEmberLayer(){
   ctx.globalAlpha=1;
 }
 
-/* ── CRAGGY MOUNTAIN HELPER ──────────────────────────────────── */
-// Deterministic jagged silhouette using sin harmonics — no flickering
-function drawCraggyMtn(x,baseY,w,h,col,seed){
-  ctx.fillStyle=col;
-  ctx.beginPath();
-  ctx.moveTo(x-5,baseY+6);
-  const N=18;
-  for(let s=0;s<=N;s++){
-    const t=s/N, px=x+t*w;
-    const bell=4*t*(1-t);
-    const jag=Math.sin(t*8.3+seed)*0.18
-             +Math.sin(t*17.1+seed*1.6)*0.09
-             +Math.sin(t*29.3+seed*0.8)*0.04;
-    ctx.lineTo(Math.round(px), Math.round(baseY-h*(bell*(0.88+jag))));
-  }
-  ctx.lineTo(x+w+5,baseY+6);
-  ctx.closePath();
-  ctx.fill();
-}
-
 /* ── BACKGROUNDS ─────────────────────────────────────────────── */
 function drawBG0(){
-  // Sunlit Forest — 7 pixel-art layers, CC0
-  drawBGLayer(IMGS.b0_sky,    0.00);
-  drawBGLayer(IMGS.b0_clouds, 0.10);
-  drawBGLayer(IMGS.b0_mtn1,   0.18);
-  drawBGLayer(IMGS.b0_mtn2,   0.30);
-  drawBGLayer(IMGS.b0_mtn3,   0.44);
-  drawBGLayer(IMGS.b0_rocks,  0.62);
-  drawBGLayer(IMGS.b0_trees,  0.82);
-  // Distant bird flock — small M-shape pixel silhouettes
-  const bOff1=(worldX*0.14)%190;
-  ctx.fillStyle='#2a3050';
-  for(let i=0;i<5;i++){
-    const bx=Math.round(((i*190-bOff1+950)%(LW+190))-60);
-    const by=42+(i%3)*22;
-    const fw=Math.round(Math.sin(worldX*0.07+i*1.9)*3);
-    ctx.fillRect(bx-9,by+fw,5,2); ctx.fillRect(bx-4,by,3,2);
-    ctx.fillRect(bx+1,by,3,2);   ctx.fillRect(bx+5,by+fw,5,2);
-  }
-  // Nearer birds — bigger, faster, slightly darker
-  const bOff2=(worldX*0.26)%260;
-  ctx.fillStyle='#1e2440';
-  for(let i=0;i<4;i++){
-    const bx=Math.round(((i*260-bOff2+1040)%(LW+260))-80);
-    const by=70+(i%2)*28;
-    const fw=Math.round(Math.sin(worldX*0.09+i*2.5)*4);
-    ctx.fillRect(bx-12,by+fw,6,2); ctx.fillRect(bx-6,by,5,2);
-    ctx.fillRect(bx+1,by,5,2);    ctx.fillRect(bx+6,by+fw,6,2);
-  }
+  // Sunlit Forest — golden morning over rolling woodland
+  const H=LH-GROUND_H;
+  skyGrad([[0,'#7cc4d8'],[0.55,'#c6e4bb'],[1,'#f6eec2']]);
+  glowOrb(96,84,76,'rgba(255,240,185,0.55)');
+  ctx.fillStyle='#fff6d8'; circle(96,84,24);
+  row(0.05,270,1,(x,t)=>cloud(x,46+t*58,30+t*20,'rgba(255,255,255,0.85)'));
+  row(0.11,340,2,(x,t)=>cloud(x,118+t*46,22+t*14,'rgba(255,255,255,0.55)'));
+  ctx.strokeStyle='rgba(60,80,90,0.65)'; ctx.lineWidth=1.5;
+  row(0.14,180,9,(x,t)=>{
+    const by=44+t*70, fw=Math.sin(worldX*0.07+t*9)*3;
+    ctx.beginPath(); ctx.moveTo(x-6,by+fw); ctx.quadraticCurveTo(x-1,by-2,x,by);
+    ctx.quadraticCurveTo(x+1,by-2,x+6,by+fw); ctx.stroke();
+  });
+  ridge(0.10,H*0.58,55,0.004,'#b2d2a4',1);
+  row(0.10,112,3,(x,t)=>roundTree(x,H*0.64,24+t*12,24+t*10,'#9cc191'));
+  ridge(0.22,H*0.70,58,0.005,'#7fae81',2);
+  row(0.22,94,4,(x,t)=>roundTree(x,H*0.76,32+t*16,30+t*12,'#5f9a6c'));
+  ridge(0.42,H*0.84,52,0.006,'#447c54',5);
+  row(0.42,82,6,(x,t)=>roundTree(x,H*0.91,42+t*20,38+t*14,'#356b4b'));
+  ridge(0.72,H*1.02,46,0.007,'#234f38',7);
+  row(0.72,70,8,(x,t)=>roundTree(x,H+8,56+t*26,46+t*16,'#1c4030'));
 }
 
 function drawBG1(){
-  // Dark Forest — dead tree layers, CC-BY (Admurin)
-  drawBGLayer(IMGS.b1_0, 0.00);
-  drawBGLayer(IMGS.b1_1, 0.07);
-  drawBGLayer(IMGS.b1_2, 0.16);
-  drawBGLayer(IMGS.b1_3, 0.30);
-  drawBGLayer(IMGS.b1_4, 0.48);
-  drawBGLayer(IMGS.b1_5, 0.66);
-  drawBGLayer(IMGS.b1_6, 0.85);
-  // Heavy darkness overlay — makes it feel night vs. the sunlit biome 0
-  ctx.globalCompositeOperation='multiply';
-  ctx.fillStyle='rgba(8,12,20,0.62)';
-  ctx.fillRect(0,0,LW,LH-GROUND_H);
-  ctx.globalCompositeOperation='source-over';
-  // Dead tree canopy — bare trunks and branches hanging from ceiling
-  ctx.save();
-  ctx.fillStyle='#0b1219'; ctx.globalAlpha=0.80;
-  const cOff1=(worldX*0.22)%115;
-  for(let i=0;i<6;i++){
-    const px=Math.round(((i*115-cOff1+690)%(LW+115))-30);
-    const h=28+i%3*10, vr=i%3;
-    ctx.fillRect(px-2,0,4,h);
-    const lb=14+vr*5;
-    ctx.fillRect(px-lb,Math.round(h*0.42),lb,2);
-    ctx.fillRect(px-lb,Math.round(h*0.30),Math.round(lb*0.55),2);
-    const rb=11+vr*4;
-    ctx.fillRect(px,Math.round(h*0.62),rb,2);
-    ctx.fillRect(px+Math.round(rb*0.55),Math.round(h*0.73),Math.round(rb*0.55),2);
-  }
-  ctx.fillStyle='#080f16'; ctx.globalAlpha=0.90;
-  const cOff2=(worldX*0.42)%90;
-  for(let i=0;i<8;i++){
-    const px=Math.round(((i*90-cOff2+720)%(LW+90))-30);
-    const h=40+i%2*18, vr=i%3;
-    ctx.fillRect(px-3,0,6,h);
-    const lb=20+vr*6;
-    ctx.fillRect(px-lb,Math.round(h*0.40),lb,3);
-    ctx.fillRect(px-lb,Math.round(h*0.27),Math.round(lb*0.60),2);
-    const rb=16+vr*5;
-    ctx.fillRect(px,Math.round(h*0.58),rb,3);
-    ctx.fillRect(px+Math.round(rb*0.55),Math.round(h*0.70),Math.round(rb*0.55),2);
-  }
-  ctx.restore();
-  // Pixel art moon — subtle outer glow, chunky pixels, no moonbeam
-  const moonX=62, moonY=50, PS=3, PR=7;
-  const moonGlow=ctx.createRadialGradient(moonX,moonY,10,moonX,moonY,36);
-  moonGlow.addColorStop(0,'rgba(185,210,255,0.16)'); moonGlow.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=moonGlow; ctx.fillRect(moonX-36,moonY-36,72,72);
-  const craters=new Set(['-3,-2','-3,-1','2,1','3,1','-2,4','3,-4','-5,1','-4,3']);
-  for(let py=-PR;py<=PR;py++){
-    for(let px=-PR;px<=PR;px++){
-      if(px*px+py*py<=PR*PR+1){
-        ctx.fillStyle=craters.has(`${px},${py}`)
-          ?'rgba(138,160,206,0.80)'
-          :px>3?'rgba(182,204,238,0.86)'
-          :(px+py*2)%7===0?'rgba(194,212,244,0.85)':'rgba(226,239,255,0.91)';
-        ctx.fillRect(moonX+px*PS-1,moonY+py*PS-1,PS,PS);
-      }
-    }
-  }
-  // Dim stars through bare branches
-  for(const s of STARS){
-    s.t+=s.dt; ctx.globalAlpha=.06+.22*Math.abs(Math.sin(s.t));
-    ctx.fillStyle='#d0d8ea';
-    ctx.fillRect(s.x,s.y,Math.ceil(s.r),Math.ceil(s.r));
-  }
+  // Dark Forest — moonlit indigo pines
+  const H=LH-GROUND_H;
+  skyGrad([[0,'#0b0920'],[0.6,'#1b1638'],[1,'#2c2350']]);
+  for(const s of STARS){ s.t+=s.dt;
+    ctx.globalAlpha=.15+.45*Math.abs(Math.sin(s.t));
+    ctx.fillStyle='#cdd6f4'; ctx.fillRect(s.x,s.y,s.r+0.6,s.r+0.6); }
   ctx.globalAlpha=1;
-  // Ominous glowing eyes deep in the forest — blinking with torchPhase
-  const eyeOff=(worldX*0.20)%100;
-  const EY=[LH-GROUND_H-148,LH-GROUND_H-192,LH-GROUND_H-118,LH-GROUND_H-208,LH-GROUND_H-88,LH-GROUND_H-162,LH-GROUND_H-74];
-  const ES=[0,1.4,2.8,0.9,2.2,1.1,3.5];
-  const EC=['#ff2200','#ff6600','#cc1800','#ff4400','#aa1200','#ff2200','#ff5500'];
-  for(let i=0;i<7;i++){
-    const ex=Math.round(((i*100-eyeOff+1400)%700)-100);
-    const blink=Math.sin(torchPhase*0.4+ES[i]*2.1);
-    if(blink<0.08) continue;
-    ctx.globalAlpha=blink*0.46;
-    ctx.fillStyle=EC[i];
-    ctx.beginPath(); ctx.arc(ex-5,EY[i],2.5,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(ex+5,EY[i],2.5,0,Math.PI*2); ctx.fill();
-  }
-  ctx.globalAlpha=1;
-  // Spooky pine/fir silhouettes — mid-distance layer
-  ctx.fillStyle='#0d1520';
-  const pOff1=(worldX*0.55)%96;
-  for(let i=0;i<7;i++){
-    const px=((i*96-pOff1+672)%(LW+96))-30;
-    const ph=78+(i%3)*28, pw=34+(i%3)*9, layers=Math.ceil(ph/16);
-    for(let l=0;l<layers;l++){
-      const lw=Math.round(pw*(l+1)/layers);
-      ctx.fillRect(px-Math.floor(lw/2), LH-GROUND_H-5-ph+Math.round(l*ph/layers), lw, Math.round(ph/layers)+2);
-    }
-    ctx.fillRect(px-3,LH-GROUND_H-5,6,8);
-  }
-  // Near-foreground pine silhouettes — slightly darker, faster scroll
-  ctx.globalAlpha=0.88;
-  ctx.fillStyle='#070e16';
-  const pOff2=(worldX*0.88)%124;
-  for(let i=0;i<5;i++){
-    const px=((i*124-pOff2+620)%(LW+124))-40;
-    const ph=100+(i%2)*40, pw=44+(i%2)*14, layers=Math.ceil(ph/20);
-    for(let l=0;l<layers;l++){
-      const lw=Math.round(pw*(l+1)/layers);
-      ctx.fillRect(px-Math.floor(lw/2), LH-GROUND_H-5-ph+Math.round(l*ph/layers), lw, Math.round(ph/layers)+3);
-    }
-    ctx.fillRect(px-4,LH-GROUND_H-5,8,10);
-  }
-  ctx.globalAlpha=1;
-  // Perched owl silhouettes — scroll with near pine layer
-  const owlOff=(worldX*0.88)%220;
-  for(let i=0;i<3;i++){
-    const ox=Math.round(((i*220-owlOff+660)%(LW+220))-50);
-    const oy=LH-GROUND_H-78+(i%2)*16;
-    ctx.fillStyle='#060d14';
-    ctx.fillRect(ox-6,oy+4,12,18);
-    ctx.beginPath(); ctx.arc(ox,oy-4,8,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(ox-5,oy-11); ctx.lineTo(ox-8,oy-21); ctx.lineTo(ox-2,oy-13); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(ox+5,oy-11); ctx.lineTo(ox+8,oy-21); ctx.lineTo(ox+2,oy-13); ctx.fill();
-    ctx.globalAlpha=0.65+0.30*Math.sin(torchPhase*0.6+i*1.8);
-    ctx.fillStyle='#ffaa00';
-    ctx.beginPath(); ctx.arc(ox-3,oy-5,2,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(ox+3,oy-5,2,0,Math.PI*2); ctx.fill();
+  const mx=LW-92,my=72;
+  glowOrb(mx,my,84,'rgba(185,205,255,0.28)');
+  ctx.fillStyle='#e7eeff'; circle(mx,my,25);
+  ctx.fillStyle='#c3cfee';
+  circle(mx-8,my-6,5); circle(mx+6,my+5,4); circle(mx+3,my-10,2.6);
+  ridge(0.08,H*0.68,38,0.004,'#221c46',11);
+  row(0.08,72,12,(x,t)=>pine(x,H*0.72,28+t*20,15+t*8,'#1d1840'));
+  ridge(0.20,H*0.79,38,0.005,'#171231',13);
+  row(0.20,64,14,(x,t)=>pine(x,H*0.84,40+t*28,19+t*10,'#130f2a'));
+  ridge(0.45,H*0.91,34,0.006,'#0d0a1f',15);
+  row(0.45,60,16,(x,t)=>pine(x,H*0.97,58+t*38,25+t*12,'#0a081a'));
+  row(0.45,170,18,(x,t)=>{
+    const blink=Math.sin(torchPhase*0.45+t*9.3);
+    if(blink<0.15) return;
+    ctx.globalAlpha=blink*0.55;
+    ctx.fillStyle=['#ff3322','#ff7700','#ffba00'][Math.floor(t*2.99)];
+    const ey=H*0.78-t*60;
+    circle(x-4,ey,2.2); circle(x+4,ey,2.2);
     ctx.globalAlpha=1;
-  }
-  // Rolling ground mist
-  const mistOff=(worldX*0.14)%240;
-  for(let i=0;i<4;i++){
-    const mx=((i*240-mistOff+LW*2)%(LW+240))-60;
-    const alpha=0.10+0.06*Math.sin(i+worldX*0.002);
-    ctx.globalAlpha=alpha; ctx.fillStyle='#8899aa';
-    ctx.fillRect(mx,LH-GROUND_H-22,200,22);
-    ctx.globalAlpha=alpha*0.5; ctx.fillRect(mx+40,LH-GROUND_H-38,140,20);
+  });
+  row(0.80,78,17,(x,t)=>pine(x,H+10,82+t*46,33+t*16,'#060512'));
+  for(const f of FLIES){
+    f.ph+=0.035;
+    const fx=(((f.x-worldX*f.sp)%LW)+LW)%LW;
+    const fy=f.y+Math.sin(f.ph)*9;
+    ctx.globalAlpha=0.25+0.45*Math.abs(Math.sin(f.ph*0.7));
+    ctx.fillStyle='#d8ffa0'; circle(fx,fy,1.6);
   }
   ctx.globalAlpha=1;
-  // Deep floor shadow
-  const gg=ctx.createLinearGradient(0,LH-GROUND_H-60,0,LH-GROUND_H);
-  gg.addColorStop(0,'rgba(5,8,15,0)'); gg.addColorStop(1,'rgba(5,8,15,0.55)');
-  ctx.fillStyle=gg; ctx.fillRect(0,LH-GROUND_H-60,LW,60);
+  row(0.16,240,19,(x,t)=>{
+    ctx.globalAlpha=0.10+t*0.06; ctx.fillStyle='#9aa6c8';
+    ctx.beginPath(); ctx.ellipse(x,H-12,130,15,0,0,Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha=1;
 }
 
 function drawBG2(){
-  // Mossy Fortress — gothic castle interior, CC0 (ansimuz / opengameart.org)
-  // Dark fill so any gaps between art layers read as deep shadow
-  ctx.fillStyle='#0a0d08'; ctx.fillRect(0,0,LW,LH-GROUND_H);
-  // Pan (don't tile) — these art assets aren't seamlessly repeating
-  function panBG(img, rate){
-    if(!img) return;
-    const dH=LH-GROUND_H, sc=dH/img.naturalHeight, dW=img.naturalWidth*sc;
-    const shift=Math.min(worldX*rate, Math.max(dW-LW,0));
-    ctx.drawImage(img,-shift,0,dW,dH);
-    if(dW<LW) ctx.drawImage(img,dW-shift,0,dW,dH); // second copy if narrower than canvas
+  // Mossy Fortress — ruined castle skyline in teal twilight
+  const H=LH-GROUND_H;
+  skyGrad([[0,'#0f211e'],[0.55,'#21443a'],[1,'#3d6a4d']]);
+  glowOrb(LW*0.5,H*0.5,150,'rgba(110,220,150,0.08)');
+  for(const s of STARS){ s.t+=s.dt;
+    ctx.globalAlpha=.08+.2*Math.abs(Math.sin(s.t));
+    ctx.fillStyle='#bfe8cf'; ctx.fillRect(s.x,s.y*0.7,s.r+0.4,s.r+0.4); }
+  ctx.globalAlpha=1;
+  ridge(0.08,H*0.66,16,0.003,'#2a4c42',21);
+  row(0.08,180,22,(x,t)=>tower(x,H*0.68,56+t*54,30+t*16,'#2a4c42',t));
+  ridge(0.22,H*0.82,18,0.004,'#1b3530',23);
+  row(0.22,160,24,(x,t)=> t>0.55 ? tower(x,H*0.84,76+t*60,36+t*14,'#1b3530',t)
+                                  : archRuin(x,H*0.84,52+t*36,'#1b3530'));
+  ridge(0.5,H*0.98,14,0.005,'#0f2220',25);
+  row(0.5,130,26,(x,t)=>brokenColumn(x,H+6,56+t*66,15+t*8,'#0f2220'));
+  for(const f of FLIES){
+    f.ph+=0.03;
+    const fx=(((f.x-worldX*0.4)%LW)+LW)%LW, fy=f.y+Math.sin(f.ph)*7;
+    ctx.globalAlpha=0.2+0.4*Math.abs(Math.sin(f.ph*0.8));
+    ctx.fillStyle='#9fe8a8'; circle(fx,fy,1.5);
   }
-  panBG(IMGS.b2_back, 0.03); // far wall — very slow pan
-  panBG(IMGS.b2_mid,  0.12); // mid arches — moderate pan
-  // Foreground columns — spaced like scenery, scroll continuously left
-  if(IMGS.b2_col){
-    const img=IMGS.b2_col, sc=(LH-GROUND_H)/img.naturalHeight;
-    const dW=Math.round(img.naturalWidth*sc), dH=LH-GROUND_H;
-    const spacing=Math.round(dW*2.6);
-    const base=-(worldX*0.72)%spacing - spacing;
-    for(let cx=base; cx<LW+dW; cx+=spacing)
-      ctx.drawImage(img, Math.round(cx), 0, dW, dH);
+  ctx.globalAlpha=1;
+  const mg=ctx.createLinearGradient(0,H-50,0,H);
+  mg.addColorStop(0,'rgba(40,90,30,0)'); mg.addColorStop(1,'rgba(45,105,35,0.40)');
+  ctx.fillStyle=mg; ctx.fillRect(0,H-50,LW,50);
+}
+function tower(x,baseY,h,w,col,t){
+  ctx.fillStyle=col;
+  ctx.fillRect(x-w/2,baseY-h,w,h+34);
+  if(t>0.62){
+    ctx.beginPath(); ctx.moveTo(x-w/2-4,baseY-h);
+    ctx.lineTo(x,baseY-h-w*0.95); ctx.lineTo(x+w/2+4,baseY-h);
+    ctx.closePath(); ctx.fill();
+  } else {
+    const mw=w/5;
+    for(let i=0;i<3;i++) ctx.fillRect(x-w/2+i*2*mw,baseY-h-mw,mw,mw+1);
   }
-  // Moss tint — dark green shift makes stone read as overgrown
-  ctx.globalCompositeOperation='multiply';
-  ctx.fillStyle='rgba(32,55,22,0.45)';
-  ctx.fillRect(0,0,LW,LH-GROUND_H);
-  ctx.globalCompositeOperation='source-over';
-  // Moss drips from ceiling
-  ctx.fillStyle='rgba(55,95,30,0.65)';
-  const mOff=(worldX*0.28)%72;
-  for(let mx=-mOff; mx<LW+72; mx+=72){
-    const mh=10+Math.sin(mx*0.07)*5;
-    ctx.fillRect(Math.round(mx),    0, 6, Math.round(mh));
-    ctx.fillRect(Math.round(mx+22), 0, 4, Math.round(mh*0.55));
-    ctx.fillRect(Math.round(mx+48), 0, 5, Math.round(mh*0.75));
-  }
-  // Ground moss glow
-  const mg=ctx.createLinearGradient(0,LH-GROUND_H-45,0,LH-GROUND_H);
-  mg.addColorStop(0,'rgba(30,65,12,0)'); mg.addColorStop(1,'rgba(30,65,12,0.38)');
-  ctx.fillStyle=mg; ctx.fillRect(0,LH-GROUND_H-45,LW,45);
-  // Ceiling vignette — deep shadow at top like a vaulted roof
-  const dt=ctx.createLinearGradient(0,0,0,70);
-  dt.addColorStop(0,'rgba(0,0,0,0.85)'); dt.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=dt; ctx.fillRect(0,0,LW,70);
+  ctx.fillStyle='rgba(140,235,175,0.5)';
+  ctx.fillRect(x-2,baseY-h+13,4,8);
+  if(h>80) ctx.fillRect(x-2,baseY-h+40,4,8);
+}
+function archRuin(x,baseY,h,col){
+  ctx.fillStyle=col;
+  ctx.fillRect(x-27,baseY-h,11,h+24);
+  ctx.fillRect(x+16,baseY-h,11,h+24);
+  ctx.beginPath();
+  ctx.moveTo(x-27,baseY-h+7);
+  ctx.quadraticCurveTo(x,baseY-h-24,x+27,baseY-h+7);
+  ctx.lineTo(x+27,baseY-h+16);
+  ctx.quadraticCurveTo(x,baseY-h-12,x-27,baseY-h+16);
+  ctx.closePath(); ctx.fill();
+}
+function brokenColumn(x,baseY,h,w,col){
+  ctx.fillStyle=col;
+  ctx.fillRect(x-w/2,baseY-h,w,h);
+  ctx.fillRect(x-w/2-3,baseY-h,w+6,5);
+  ctx.fillRect(x-w/2-3,baseY-7,w+6,7);
 }
 
 function drawBG3(){
-  // Lava Cavern — same cave pack as biome 1, orange-tinted
-  drawBGLayer(IMGS.b3_0, 0.00);
-  drawBGLayer(IMGS.b3_1, 0.10);
-  drawBGLayer(IMGS.b3_2, 0.22);
-  drawBGLayer(IMGS.b3_3, 0.40);
-  drawBGLayer(IMGS.b3_4, 0.60);
-  drawBGLayer(IMGS.b3_5, 0.78);
-  // Lava tint — multiply shifts neutral cave art toward molten orange
-  ctx.globalCompositeOperation='multiply';
-  ctx.fillStyle='rgba(255,75,5,0.60)';
-  ctx.fillRect(0,0,LW,LH-GROUND_H);
-  ctx.globalCompositeOperation='source-over';
-  // Glow rising from lava floor
-  const lg=ctx.createLinearGradient(0,LH-GROUND_H-130,0,LH-GROUND_H);
-  lg.addColorStop(0,'rgba(255,60,0,0)'); lg.addColorStop(1,'rgba(255,90,0,0.50)');
-  ctx.fillStyle=lg; ctx.fillRect(0,LH-GROUND_H-130,LW,130);
+  // Lava Cavern — molten falls deep underground
+  const H=LH-GROUND_H;
+  skyGrad([[0,'#150a06'],[0.65,'#2a0f06'],[1,'#54180a']]);
+  row(0.10,210,31,(x,t)=>{
+    const fl=0.55+0.35*Math.sin(torchPhase+t*9), fw=5+t*8;
+    const g=ctx.createLinearGradient(0,H*0.2,0,H);
+    g.addColorStop(0,`rgba(255,130,30,${(0.08*fl).toFixed(3)})`);
+    g.addColorStop(1,`rgba(255,95,10,${(0.5*fl).toFixed(3)})`);
+    ctx.fillStyle=g; ctx.fillRect(x-fw/2,H*0.2+t*26,fw,H);
+    glowOrb(x,H-6,26*fl,'rgba(255,110,20,0.5)');
+  });
+  ceilRidge(0.16,8,62,0.006,'#230d06',33);
+  row(0.16,92,34,(x,t)=>spike(x,0,42+t*52,13+t*9,'#230d06',true));
+  ridge(0.16,H*0.93,36,0.006,'#230d06',35);
+  row(0.16,112,36,(x,t)=>spike(x,H+4,30+t*40,15+t*10,'#230d06',false));
+  ceilRidge(0.40,4,42,0.007,'#170803',37);
+  row(0.40,78,38,(x,t)=>spike(x,0,58+t*68,17+t*11,'#170803',true));
+  ridge(0.40,H*0.99,26,0.007,'#170803',39);
+  row(0.40,98,40,(x,t)=>spike(x,H+6,48+t*54,19+t*12,'#170803',false));
+  const lg=ctx.createLinearGradient(0,H-120,0,H);
+  lg.addColorStop(0,'rgba(255,70,0,0)'); lg.addColorStop(1,'rgba(255,95,0,0.45)');
+  ctx.fillStyle=lg; ctx.fillRect(0,H-120,LW,120);
   spawnEmber(false); drawEmberLayer();
-  // Cave bats — flying near ceiling
-  drawBats(4,0.36,28,95,5.5,'#0d0808',false);
+  drawBats(4,0.36,28,95,5.5,'#120503',false);
 }
 
 function drawBG4(){
-  // Volcanic Hellscape — procedural craggy mountains + lava glow
-  const skyH=LH-GROUND_H;
-  // Dark sky: near-black at top → deep crimson at horizon
-  const sky=ctx.createLinearGradient(0,0,0,skyH);
-  sky.addColorStop(0,'#060002'); sky.addColorStop(0.55,'#150005'); sky.addColorStop(1,'#3d0008');
-  ctx.fillStyle=sky; ctx.fillRect(0,0,LW,skyH);
-  // Lava horizon glow
-  const hg=ctx.createLinearGradient(0,skyH-80,0,skyH);
-  hg.addColorStop(0,'rgba(255,50,0,0)'); hg.addColorStop(0.65,'rgba(255,80,0,0.35)');
-  hg.addColorStop(1,'rgba(255,120,10,0.70)');
-  ctx.fillStyle=hg; ctx.fillRect(0,skyH-80,LW,80);
-  // Distant mountains — tallest, slowest, darkest
-  const dm=(worldX*0.07)%330;
-  for(let i=-1;i<Math.ceil(LW/330)+2;i++)
-    drawCraggyMtn(i*330-dm,skyH,330,160,'#0d0101',i*3.7);
-  // Mid mountains — lava seam cracks
-  const mm=(worldX*0.17)%235;
-  ctx.save();
-  ctx.lineWidth=1.5;
-  for(let i=-1;i<Math.ceil(LW/235)+2;i++){
-    const mx=i*235-mm;
-    drawCraggyMtn(mx,skyH,235,118,'#1c0303',i*5.2+1.3);
-    ctx.strokeStyle=`rgba(255,70,0,${(0.35+0.2*Math.sin(torchPhase+i)).toFixed(2)})`;
-    const cx1=Math.round(mx+235*0.43), cy1=Math.round(skyH-118*0.52);
-    ctx.beginPath(); ctx.moveTo(cx1,cy1); ctx.lineTo(cx1+4,cy1+18); ctx.lineTo(cx1-2,cy1+36); ctx.stroke();
+  // Volcanic Hellscape — ash, eclipse and burning peaks
+  const H=LH-GROUND_H;
+  skyGrad([[0,'#0a0103'],[0.5,'#290409'],[1,'#6e120d']]);
+  const ex=LW-96,ey=82;
+  glowOrb(ex,ey,90,'rgba(255,60,20,0.35)');
+  ctx.fillStyle='#120104'; circle(ex,ey,25);
+  ctx.strokeStyle=`rgba(255,90,30,${(0.7+0.25*Math.sin(torchPhase)).toFixed(2)})`;
+  ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(ex,ey,25,0,Math.PI*2); ctx.stroke();
+  const hg=ctx.createLinearGradient(0,H-90,0,H);
+  hg.addColorStop(0,'rgba(255,60,0,0)'); hg.addColorStop(1,'rgba(255,110,10,0.55)');
+  ctx.fillStyle=hg; ctx.fillRect(0,H-90,LW,90);
+  ridge(0.07,H*0.55,105,0.0035,'#3b0f12',41);
+  ridge(0.16,H*0.72,105,0.0045,'#2a070b',42);
+  crackRow(0.16,150,43,H*0.60);
+  ridge(0.34,H*0.88,95,0.0055,'#190205',44);
+  crackRow(0.34,115,45,H*0.76);
+  ctx.fillStyle='rgba(225,205,195,0.28)';
+  for(let i=0;i<26;i++){
+    const ax=((hash(i)*LW+worldX*(0.25+hash(i+99)*0.4)+Math.sin(worldX*0.012+i)*18)%LW+LW)%LW;
+    const ay=((hash(i+50)*H+worldX*(0.18+hash(i+77)*0.3))%H+H)%H;
+    ctx.fillRect(ax,ay,2,2);
   }
-  ctx.restore();
-  // Near mountains — two cracks each
-  const nm=(worldX*0.34)%185;
-  ctx.save();
-  ctx.lineWidth=1;
-  for(let i=-1;i<Math.ceil(LW/185)+2;i++){
-    const mx=i*185-nm;
-    drawCraggyMtn(mx,skyH,185,82,'#260505',i*7.1+2.6);
-    ctx.strokeStyle=`rgba(255,90,0,${(0.40+0.25*Math.sin(torchPhase*1.3+i*0.8)).toFixed(2)})`;
-    const cx2=Math.round(mx+185*0.38), cy2=Math.round(skyH-82*0.55);
-    ctx.beginPath(); ctx.moveTo(cx2,cy2); ctx.lineTo(cx2-3,cy2+16); ctx.lineTo(cx2+2,cy2+28); ctx.stroke();
-    const cx3=Math.round(mx+185*0.60), cy3=Math.round(skyH-82*0.46);
-    ctx.beginPath(); ctx.moveTo(cx3,cy3); ctx.lineTo(cx3+4,cy3+14); ctx.lineTo(cx3-1,cy3+25); ctx.stroke();
-  }
-  ctx.restore();
-  // Floor heat glow
-  const flg=ctx.createLinearGradient(0,LH-GROUND_H-120,0,LH-GROUND_H);
-  flg.addColorStop(0,'rgba(255,60,0,0)'); flg.addColorStop(1,'rgba(255,100,0,0.55)');
-  ctx.fillStyle=flg; ctx.fillRect(0,LH-GROUND_H-120,LW,120);
   spawnEmber(true); drawEmberLayer();
-  // Hell demons — two layers, glowing red eyes
-  drawBats(5,0.44,25,105,7,'#1a0002',true);
-  drawBats(7,0.68,45,130,4,'#0e0001',true);
+  drawBats(5,0.44,25,105,7,'#190104',true);
+  drawBats(7,0.68,45,130,4,'#0e0102',true);
+}
+function crackRow(depth,spacing,seed,yBase){
+  row(depth,spacing,seed,(x,t)=>{
+    ctx.strokeStyle=`rgba(255,${70+Math.floor(t*60)},0,${(0.30+0.25*Math.sin(torchPhase+t*8)).toFixed(2)})`;
+    ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(x,yBase-t*34);
+    ctx.lineTo(x+5,yBase-t*34+22); ctx.lineTo(x-2,yBase-t*34+46); ctx.stroke();
+  });
 }
 
 /* ── GROUND ──────────────────────────────────────────────────── */
 function drawGround(){
   const gy=LH-GROUND_H;
   if(biome===0){
-    ctx.fillStyle='#5d4037'; ctx.fillRect(0,gy,LW,GROUND_H);
-    ctx.fillStyle='#4caf50'; ctx.fillRect(0,gy,LW,14);
-    ctx.fillStyle='#388e3c'; ctx.fillRect(0,gy+10,LW,4);
-    ctx.strokeStyle='rgba(0,0,0,0.12)'; ctx.lineWidth=1;
+    ctx.fillStyle='#16382a'; ctx.fillRect(0,gy,LW,GROUND_H);
+    ctx.fillStyle='#2c5e40'; ctx.fillRect(0,gy,LW,14);
+    ctx.fillStyle='#4d8a5e'; ctx.fillRect(0,gy,LW,4);
+    ctx.fillStyle='rgba(0,0,0,0.20)';
     for(let x=-gOff;x<LW+48;x+=48){
-      ctx.beginPath(); ctx.moveTo(x,gy+14); ctx.lineTo(x+28,gy+14); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(x+20,gy+34,9,4,0,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(x+40,gy+52,6,3,0,0,Math.PI*2); ctx.fill();
     }
   } else if(biome===1){
-    // Dark forest — dark soil with dead roots and low mist
-    ctx.fillStyle='#0e1218'; ctx.fillRect(0,gy,LW,GROUND_H);
-    ctx.fillStyle='#1a2030'; ctx.fillRect(0,gy,LW,10);
-    ctx.fillStyle='#253040'; ctx.fillRect(0,gy+8,LW,2);
-    // Exposed dark roots
-    ctx.strokeStyle='rgba(40,50,30,0.7)'; ctx.lineWidth=2;
-    for(let x=-gOff*.6;x<LW+80;x+=80){
-      const rx=Math.round(x);
-      ctx.beginPath(); ctx.moveTo(rx,gy+10); ctx.lineTo(rx+12,gy+28); ctx.lineTo(rx+8,gy+50); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(rx+40,gy+10); ctx.lineTo(rx+32,gy+35); ctx.stroke();
+    ctx.fillStyle='#0a0918'; ctx.fillRect(0,gy,LW,GROUND_H);
+    ctx.fillStyle='#181430'; ctx.fillRect(0,gy,LW,12);
+    ctx.fillStyle='#262048'; ctx.fillRect(0,gy,LW,3);
+    ctx.strokeStyle='rgba(120,130,180,0.16)'; ctx.lineWidth=2;
+    for(let x=-gOff*.7;x<LW+80;x+=80){
+      ctx.beginPath(); ctx.moveTo(x,gy+14); ctx.quadraticCurveTo(x+10,gy+30,x+6,gy+48); ctx.stroke();
     }
   } else if(biome===2){
-    // Mossy fortress floor — dark stone with green moss in cracks
-    ctx.fillStyle='#181e14'; ctx.fillRect(0,gy,LW,GROUND_H);
-    ctx.fillStyle='#2a3422'; ctx.fillRect(0,gy,LW,8);
-    ctx.fillStyle='#3a4a2c'; ctx.fillRect(0,gy+6,LW,2);
-    ctx.strokeStyle='rgba(0,0,0,0.5)'; ctx.lineWidth=1;
+    ctx.fillStyle='#0a1715'; ctx.fillRect(0,gy,LW,GROUND_H);
+    ctx.fillStyle='#15302a'; ctx.fillRect(0,gy,LW,10);
+    ctx.fillStyle='#2c5a40'; ctx.fillRect(0,gy,LW,3);
+    ctx.strokeStyle='rgba(0,0,0,0.45)'; ctx.lineWidth=1;
     for(let x=-gOff;x<LW+48;x+=48){
-      ctx.strokeRect(Math.round(x),gy+8,48,GROUND_H-8);
-      ctx.fillStyle='rgba(50,90,30,0.35)';
-      ctx.fillRect(Math.round(x)+2,gy+8,6,3);
+      ctx.strokeRect(Math.round(x),gy+10,48,GROUND_H-10);
+      ctx.fillStyle='rgba(70,140,60,0.35)';
+      ctx.fillRect(Math.round(x)+3,gy+10,8,3);
     }
   } else if(biome===3){
     ctx.fillStyle='#0c0500'; ctx.fillRect(0,gy,LW,GROUND_H);
@@ -1052,413 +959,215 @@ function drawPipes(){
     else               drawHellPillar(p);
   }
 }
-/* ── PIPE LIGHT FIXTURES ─────────────────────────────────────── */
-// Lantern bolted to the bottom face of the top-pipe cap (hangs down into gap)
-function drawCapLantern(tx,ty,fc,gc){
-  const fl=0.72+0.28*Math.sin(torchPhase);
-  // Mounting bracket plate flush with cap stone face
-  ctx.fillStyle='#5a4a35'; ctx.fillRect(tx-10,ty,20,3);
-  ctx.fillStyle='#2e2824'; ctx.fillRect(tx-8,ty+1,2,2); ctx.fillRect(tx+6,ty+1,2,2);
-  // Chain link from bracket center
-  ctx.fillStyle='#2e2a24'; ctx.fillRect(tx-1,ty+3,2,5);
-  ctx.fillStyle='#403b33'; ctx.fillRect(tx-6,ty+7,12,3);  // lantern top
-  ctx.fillStyle='#4a4438'; ctx.fillRect(tx-5,ty+10,10,8); // lantern body
-  ctx.fillStyle='#2e2a24'; ctx.fillRect(tx-6,ty+18,12,2); // lantern base
-  const g=ctx.createRadialGradient(tx,ty+14,0,tx,ty+14,20*fl);
-  g.addColorStop(0,gc); g.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(tx,ty+14,22*fl,0,Math.PI*2); ctx.fill();
-  ctx.globalAlpha=fl;
-  ctx.fillStyle=fc; ctx.fillRect(tx-2,ty+11,4,6); ctx.fillRect(tx-1,ty+10,2,3);
-  ctx.fillStyle='#fefce8'; ctx.fillRect(tx-1,ty+12,2,3);
-  ctx.globalAlpha=1;
-}
-// Torch bolted to the top face of the bottom-pipe cap (flame up into gap)
-function drawCapTorch(tx,ty,fc,gc){
-  const fl=0.72+0.28*Math.sin(torchPhase+0.7);
-  // Mounting bracket plate flush with cap stone face
-  ctx.fillStyle='#5a4a35'; ctx.fillRect(tx-10,ty-3,20,3);
-  ctx.fillStyle='#2e2824'; ctx.fillRect(tx-8,ty-2,2,2); ctx.fillRect(tx+6,ty-2,2,2);
-  // Post rising from bracket
-  ctx.fillStyle='#2e2a24'; ctx.fillRect(tx-2,ty-11,4,8);
-  ctx.fillStyle='#403b33'; ctx.fillRect(tx-4,ty-13,8,4); // cup
-  const g=ctx.createRadialGradient(tx,ty-17,0,tx,ty-17,18*fl);
-  g.addColorStop(0,gc); g.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(tx,ty-17,20*fl,0,Math.PI*2); ctx.fill();
-  ctx.globalAlpha=fl;
-  ctx.fillStyle=fc; ctx.fillRect(tx-2,ty-23,4,8); ctx.fillRect(tx-1,ty-27,2,6);
-  ctx.fillStyle='#fefce8'; ctx.fillRect(tx-1,ty-25,2,4);
-  ctx.globalAlpha=1;
-}
-
-/* pixel art brick helper — draws mortar + offset brick rows */
-function drawBricks(bx,by,bw,bh,mainCol,hiCol,mortarCol){
-  if(bh<=0||bw<=0) return;
-  ctx.fillStyle=mortarCol; ctx.fillRect(bx,by,bw,bh);
-  const BW=14,BH=9;
-  for(let r=0; r*BH<bh+BH; r++){
-    const ox=(r%2)*(BW/2);
-    for(let c=-1; c*BW<bw+BW; c++){
-      const x1=Math.max(Math.round(bx+c*BW+ox)+1,bx);
-      const y1=Math.max(Math.round(by+r*BH)+1,by);
-      const x2=Math.min(Math.round(bx+c*BW+ox)+BW-1,bx+bw);
-      const y2=Math.min(Math.round(by+r*BH)+BH-1,by+bh);
-      if(x2>x1&&y2>y1){
-        ctx.fillStyle=mainCol; ctx.fillRect(x1,y1,x2-x1,y2-y1);
-        ctx.fillStyle=hiCol;   ctx.fillRect(x1,y1,x2-x1,2);
-      }
-    }
-  }
-}
+/* ── PILLAR STYLES ───────────────────────────────────────────── */
+// Rule: the solid body fills the hitbox rect exactly; decoration
+// (canopy, teeth, battlements, flames, glow) extends OUTWARD only.
 function drawForestPillar({x,topH,botY}){
-  const sp=biome===1;
-  const fc=sp?'#c084fc':'#fbbf24', gc=sp?'rgba(180,80,240,0.45)':'rgba(255,185,50,0.55)';
-  const botH=LH-GROUND_H-botY;
-  const stemC=sp?'#2a3a1e':'#3a5c22', leafC=sp?'#2a4a18':'#4a8a2c', leafH=sp?'#3a5a28':'#6aaa40';
-  const logC=sp?'#3a2840':'#6b4c2a', logH=sp?'#5a4860':'#8b6c4a', logD=sp?'#1e1428':'#3a2810';
-
-  // ── TOP: vine-wrapped column ──────────────────────────────────
-  ctx.fillStyle=sp?'#181424':'#1e2a14'; ctx.fillRect(x,0,PIPE_W,topH-14);
-  for(let vi=0;vi<3;vi++){
-    const sx=x+8+vi*16; ctx.fillStyle=stemC;
-    for(let vy=0;vy<topH-14;vy+=3){
-      ctx.fillRect(sx+Math.round(Math.sin(vy*0.15+vi*2)*2),vy,2,3);
-    }
+  const sp=biome===1, botH=LH-GROUND_H-botY, cx=x+PIPE_W/2;
+  const trunk=sp?'#0c0a1e':'#1d4634', bark=sp?'#1a1638':'#2d6044';
+  const leaf=sp?'#141030':'#2c5e40', leafHi=sp?'#241c50':'#447c54';
+  const halo=sp?'rgba(165,110,255,0.5)':'rgba(255,205,90,0.5)';
+  const core=sp?'#e6d5ff':'#fff2c0';
+  // TOP — great hanging bough
+  ctx.fillStyle=trunk; ctx.fillRect(x,0,PIPE_W,topH-8);
+  ctx.fillStyle=bark; ctx.fillRect(x,0,7,topH-8);
+  ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.fillRect(x+PIPE_W-6,0,6,topH-8);
+  blobs(cx,topH-12,PIPE_W+24,30,leaf,leafHi);
+  ctx.strokeStyle=leaf; ctx.lineWidth=2.5;
+  for(let i=0;i<3;i++){
+    const vx=x+11+i*18, vl=12+(i%2)*9+Math.sin(torchPhase+i*1.3)*2;
+    ctx.beginPath(); ctx.moveTo(vx,topH+2);
+    ctx.quadraticCurveTo(vx+3,topH+vl*0.6,vx-2,topH+vl); ctx.stroke();
   }
-  [[x+3,topH*0.12,10,6],[x+30,topH*0.27,9,5],[x+10,topH*0.48,12,6],[x+36,topH*0.63,8,5],[x+6,topH*0.79,11,6]]
-    .forEach(([rx,ry,rw,rh])=>{
-      ctx.fillStyle=leafC; ctx.fillRect(rx,ry,rw,rh);
-      ctx.fillStyle=leafH; ctx.fillRect(rx,ry,rw,2);
-    });
-  ctx.fillStyle=logC; ctx.fillRect(x-5,topH-14,PIPE_W+10,14);
-  ctx.fillStyle=logH; ctx.fillRect(x-5,topH-14,PIPE_W+10,3);
-  ctx.fillStyle=logD; ctx.fillRect(x-5,topH-2,PIPE_W+10,2);
-  for(let vt=0;vt<5;vt++){
-    const vtx=x+5+vt*11;
-    const vtLen=10+(vt%3)*7+Math.round(Math.sin(torchPhase+vt*1.3)*2);
-    ctx.fillStyle=stemC;
-    for(let vy=0;vy<vtLen;vy+=2){
-      ctx.fillRect(vtx+Math.round(Math.sin(torchPhase+vt*1.3+vy*0.2)*1.5),topH+vy,2,2);
-    }
-    ctx.fillStyle=leafC; ctx.fillRect(vtx-3,topH+vtLen,8,4);
-  }
-  drawCapLantern(x+PIPE_W/2,topH,fc,gc);
-
-  // ── BOTTOM: pixel art tree ────────────────────────────────────
-  if(sp){
-    // Narrower gnarled trunk
-    const tw=14, tx=x+(PIPE_W-tw)/2;
-    ctx.fillStyle='#1a1218'; ctx.fillRect(tx,botY,tw,botH);
-    ctx.fillStyle='#2a1e28'; ctx.fillRect(tx,botY,3,botH);
-    ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.fillRect(tx+tw-3,botY,3,botH);
-    ctx.fillStyle='#100c16';
-    for(let by=botY+8;by<LH-GROUND_H;by+=18){ ctx.fillRect(tx+4,by,5,2); ctx.fillRect(tx+3,by+9,4,2); }
-    // Dark foliage crown — 4 stacked spooky tiers, widest at bottom
-    const fCol=['#0a1808','#0f2010','#142814','#1a3018'];
-    const fHi=['#14200c','#1a2c14','#20381a','#284420'];
-    for(let fl=0;fl<4;fl++){
-      const fw=PIPE_W+18-fl*8, fx2=x+(PIPE_W-fw)/2;
-      const fy=botY-8-fl*16;
-      ctx.fillStyle=fCol[fl];
-      ctx.fillRect(fx2,fy+9,fw,13);
-      ctx.beginPath(); ctx.moveTo(fx2+fw/2,fy); ctx.lineTo(fx2+fw,fy+11); ctx.lineTo(fx2,fy+11); ctx.fill();
-      ctx.fillStyle=fHi[fl]; ctx.fillRect(fx2,fy+9,fw,2);
-    }
-    // Bare branch tips poking from crown sides
-    ctx.strokeStyle='#221828'; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.moveTo(x-2,botY-12); ctx.lineTo(x-18,botY-34); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x+PIPE_W+2,botY-10); ctx.lineTo(x+PIPE_W+18,botY-28); ctx.stroke();
-    ctx.lineWidth=1;
-    // Cobweb
-    ctx.strokeStyle='rgba(140,130,160,0.25)';
-    ctx.beginPath(); ctx.moveTo(x-14,botY-30); ctx.lineTo(x+4,botY-10); ctx.stroke();
-  } else {
-    const tw=18, tx=x+(PIPE_W-tw)/2;
-    ctx.fillStyle='#5c3a1a'; ctx.fillRect(tx,botY,tw,botH);
-    ctx.fillStyle='#7c5a2a'; ctx.fillRect(tx,botY,4,botH);
-    ctx.fillStyle='rgba(0,0,0,0.25)'; ctx.fillRect(tx+tw-3,botY,3,botH);
-    ctx.fillStyle='#3a2010';
-    for(let by=botY+10;by<LH-GROUND_H;by+=20){ ctx.fillRect(tx+5,by,8,2); ctx.fillRect(tx+4,by+10,6,2); }
-    const fC=['#1e5c0e','#2d7a18','#3d8e28'];
-    for(let fl=0;fl<3;fl++){
-      const fy=botY-10-fl*18, fw=PIPE_W+14-fl*10, fx=x+(PIPE_W-fw)/2;
-      ctx.fillStyle=fC[fl]; ctx.fillRect(fx,fy+8,fw,14);
-      ctx.beginPath(); ctx.moveTo(fx+fw/2,fy); ctx.lineTo(fx+fw,fy+10); ctx.lineTo(fx,fy+10); ctx.fill();
-      ctx.fillStyle='#5ab030'; ctx.fillRect(fx,fy+8,fw,2);
-    }
-    ctx.fillStyle='#fbbf24';
-    [[x+4,botY-6],[x+PIPE_W-8,botY-9],[x+PIPE_W/2-3,botY-3]].forEach(([px,py])=>ctx.fillRect(px,py,3,3));
-  }
+  // BOTTOM — colossal tree
+  ctx.fillStyle=trunk; ctx.fillRect(x,botY+8,PIPE_W,botH-8);
+  ctx.fillStyle=bark; ctx.fillRect(x,botY+8,7,botH-8);
+  ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.fillRect(x+PIPE_W-6,botY+8,6,botH-8);
+  blobs(cx,botY+14,PIPE_W+28,34,leaf,leafHi);
+  gapGlow(cx,topH-4,halo,core);
+  gapGlow(cx,botY+4,halo,core);
 }
 function drawStonePillar({x,topH,botY}){
-  const cO=5,cH=18,botH=LH-GROUND_H-botY;
-  // ── TOP: mossy stalactites ────────────────────────────────────
-  ctx.fillStyle='#2a2e26'; ctx.fillRect(x,0,PIPE_W,topH-12);
-  ctx.fillStyle='rgba(52,88,32,0.3)';
-  [[x+2,topH*0.18,9,6],[x+40,topH*0.42,10,5],[x+8,topH*0.65,13,6]].forEach(([rx,ry,rw,rh])=>ctx.fillRect(rx,ry,rw,rh));
-  ctx.fillStyle='#30332a'; ctx.fillRect(x-cO,topH-12,PIPE_W+cO*2,12);
-  ctx.fillStyle='#52554c'; ctx.fillRect(x-cO,topH-12,PIPE_W+cO*2,3);
-  ctx.fillStyle='#10120d'; ctx.fillRect(x-cO,topH-2,PIPE_W+cO*2,2);
-  [[x+PIPE_W/2,32,12],[x+11,22,8],[x+PIPE_W-11,26,9],[x+4,13,5],[x+PIPE_W-4,15,5]]
-    .forEach(([cx,len,w])=>{
-      ctx.fillStyle='#3d4138'; ctx.fillRect(cx-Math.floor(w/2),topH,w,len-5);
-      ctx.beginPath(); ctx.moveTo(cx-Math.floor(w/2),topH+len-5); ctx.lineTo(cx,topH+len); ctx.lineTo(cx+Math.ceil(w/2),topH+len-5); ctx.fill();
-      ctx.fillStyle='#555950'; ctx.fillRect(cx-Math.floor(w/2),topH,2,len-5);
-      ctx.fillStyle='rgba(140,200,255,0.5)'; ctx.fillRect(cx-1,topH+len,2,3);
-    });
-  drawCapLantern(x+PIPE_W/2,topH,'#c8c040','rgba(180,195,40,0.50)');
-  // ── BOTTOM: stone pillar (unchanged) ──────────────────────────
-  ctx.fillStyle='#30332a'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,cH);
-  ctx.fillStyle='#52554c'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,3);
-  ctx.fillStyle='#10120d'; ctx.fillRect(x-cO,botY+cH-4,PIPE_W+cO*2,4);
-  drawBricks(x,botY+cH,PIPE_W,botH-cH,'#52574d','#757a6f','#1e2118');
-  ctx.fillStyle='rgba(52,88,32,0.52)';
-  [[x+4,botY+cH+14,10,5],[x+40,botY+cH+36,8,5]].forEach(([rx,ry,rw,rh])=>ctx.fillRect(rx,ry,rw,rh));
-  drawCapTorch(x+PIPE_W/2,botY,'#c8c040','rgba(180,195,40,0.50)');
+  const botH=LH-GROUND_H-botY, cx=x+PIPE_W/2;
+  const col='#10231f', edge='#23463c';
+  const winCol=`rgba(140,235,175,${(0.38+0.2*Math.sin(torchPhase)).toFixed(2)})`;
+  // TOP — keep hanging from the sky
+  ctx.fillStyle=col; ctx.fillRect(x-3,0,PIPE_W+6,topH);
+  ctx.fillStyle=edge; ctx.fillRect(x-3,0,6,topH);
+  ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fillRect(x+PIPE_W-3,0,6,topH);
+  ctx.fillStyle=col;
+  for(let i=0;i<4;i++) ctx.fillRect(x-3+i*((PIPE_W+6)/3.6),topH,11,8);
+  ctx.fillStyle=winCol;
+  for(let wy=36;wy<topH-26;wy+=58){ ctx.fillRect(cx-3,wy,6,9); circle(cx,wy,3); }
+  ctx.fillStyle='rgba(70,140,60,0.55)';
+  for(let i=0;i<5;i++) ctx.fillRect(x+2+i*12,topH-3,7,4+hash(i+x*0.7)*5);
+  // BOTTOM — rising keep
+  ctx.fillStyle=col; ctx.fillRect(x-3,botY,PIPE_W+6,botH);
+  ctx.fillStyle=edge; ctx.fillRect(x-3,botY,6,botH);
+  ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fillRect(x+PIPE_W-3,botY,6,botH);
+  ctx.fillStyle=col;
+  for(let i=0;i<4;i++) ctx.fillRect(x-3+i*((PIPE_W+6)/3.6),botY-8,11,8);
+  ctx.fillStyle=winCol;
+  for(let wy=botY+30;wy<LH-GROUND_H-20;wy+=58){ ctx.fillRect(cx-3,wy,6,9); circle(cx,wy,3); }
+  ctx.fillStyle='rgba(70,140,60,0.55)';
+  for(let i=0;i<5;i++) ctx.fillRect(x+2+i*12,botY-1,7,4+hash(i+x*0.9)*5);
+  gapGlow(cx,topH-4,'rgba(120,230,170,0.45)','#dfffe9');
+  gapGlow(cx,botY+4,'rgba(120,230,170,0.45)','#dfffe9');
 }
 function drawLavaPillar({x,topH,botY}){
-  const cO=5,cH=18,botH=LH-GROUND_H-botY;
-  const cr=`rgba(255,95,0,${0.52+0.4*Math.sin(lavaPhase)})`;
-  // ── TOP: lava stalactites ─────────────────────────────────────
-  ctx.fillStyle='#0d0600'; ctx.fillRect(x,0,PIPE_W,topH-12);
-  ctx.strokeStyle=cr; ctx.lineWidth=1.5;
-  [[x+13,0,x+19,topH*0.38],[x+36,topH*0.22,x+28,topH*0.7]]
-    .forEach(([x1,y1,x2,y2])=>{ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();});
-  ctx.fillStyle='#6b2200'; ctx.fillRect(x-cO,topH-12,PIPE_W+cO*2,12);
-  ctx.fillStyle='#9b3200'; ctx.fillRect(x-cO,topH-12,PIPE_W+cO*2,3);
-  ctx.fillStyle='#3b1000'; ctx.fillRect(x-cO,topH-2,PIPE_W+cO*2,2);
-  [[x+PIPE_W/2,30,11],[x+10,20,8],[x+PIPE_W-10,24,8],[x+3,12,5],[x+PIPE_W-3,14,5]]
-    .forEach(([cx,len,w])=>{
-      ctx.fillStyle='#3b1200'; ctx.fillRect(cx-Math.floor(w/2),topH,w,len-5);
-      ctx.beginPath(); ctx.moveTo(cx-Math.floor(w/2),topH+len-5); ctx.lineTo(cx,topH+len); ctx.lineTo(cx+Math.ceil(w/2),topH+len-5); ctx.fill();
-      ctx.fillStyle='#6b2200'; ctx.fillRect(cx-Math.floor(w/2),topH,2,len-5);
-      ctx.globalAlpha=0.5+0.3*Math.sin(lavaPhase+cx*0.05);
-      ctx.fillStyle='#ff6600'; ctx.fillRect(cx-1,topH+len,2,4);
-      ctx.globalAlpha=1;
-      const gg=ctx.createRadialGradient(cx,topH+len+2,0,cx,topH+len+2,5);
-      gg.addColorStop(0,'rgba(255,100,0,0.5)'); gg.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(cx,topH+len+2,5,0,Math.PI*2); ctx.fill();
-    });
-  // ── BOTTOM: lava pillar ───────────────────────────────────────
-  ctx.fillStyle='#6b2200'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,cH);
-  ctx.fillStyle='#9b3200'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,3);
-  ctx.fillStyle='#3b1000'; ctx.fillRect(x-cO,botY+cH-4,PIPE_W+cO*2,4);
-  drawBricks(x,botY+cH,PIPE_W,botH-cH,'#1c0e00','#2e1800','#090400');
-  const cr2=`rgba(255,95,0,${0.52+0.4*Math.sin(lavaPhase+1)})`;
-  ctx.strokeStyle=cr2; ctx.lineWidth=1.5;
-  [[x+20,botY+cH,x+14,botY+cH+48],[x+42,botY+cH+18,x+36,botY+cH+68]]
-    .forEach(([x1,y1,x2,y2])=>{ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();});
-  drawCapTorch(x+PIPE_W/2,botY,'#ff7700','rgba(255,100,0,0.65)');
+  const botH=LH-GROUND_H-botY, cx=x+PIPE_W/2, col='#1a0a04';
+  ctx.fillStyle=col; ctx.fillRect(x-2,0,PIPE_W+4,topH);
+  toothEdge(x-2,PIPE_W+4,topH,1,col,x*0.31,13);
+  ctx.fillStyle='rgba(255,80,10,0.18)'; ctx.fillRect(x-2,0,5,topH);
+  ctx.strokeStyle=`rgba(255,100,20,${(0.45+0.3*Math.sin(lavaPhase+x*0.05)).toFixed(2)})`;
+  ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(cx-5,topH*0.18); ctx.lineTo(cx+3,topH*0.5); ctx.lineTo(cx-4,topH*0.85); ctx.stroke();
+  ctx.fillStyle=col; ctx.fillRect(x-2,botY,PIPE_W+4,botH);
+  toothEdge(x-2,PIPE_W+4,botY,-1,col,x*0.57,13);
+  ctx.fillStyle='rgba(255,80,10,0.18)'; ctx.fillRect(x-2,botY,5,botH);
+  ctx.strokeStyle=`rgba(255,100,20,${(0.45+0.3*Math.sin(lavaPhase+1+x*0.05)).toFixed(2)})`;
+  ctx.beginPath(); ctx.moveTo(cx+4,botY+botH*0.15); ctx.lineTo(cx-3,botY+botH*0.5); ctx.lineTo(cx+4,botY+botH*0.85); ctx.stroke();
+  gapGlow(cx,topH-4,'rgba(255,120,30,0.5)','#ffd9a8');
+  gapGlow(cx,botY+4,'rgba(255,120,30,0.5)','#ffd9a8');
 }
 function drawHellPillar({x,topH,botY}){
-  const cO=8, botH=LH-GROUND_H-botY, lp=lavaPhase;
-  const redGlow=`rgba(255,30,0,${0.20+0.12*Math.sin(lp)})`;
-
-  // ── TOP: volcanic stalactites ─────────────────────────────────
-  ctx.fillStyle='#110103'; ctx.fillRect(x-cO,0,PIPE_W+cO*2,topH);
-  ctx.fillStyle=redGlow;
-  ctx.fillRect(x-cO,0,6,topH); ctx.fillRect(x+PIPE_W+cO-6,0,6,topH);
-  ctx.strokeStyle=`rgba(255,70,0,${0.45+0.3*Math.sin(lp*1.2)})`; ctx.lineWidth=1.5;
+  const botH=LH-GROUND_H-botY, cx=x+PIPE_W/2, col='#150103';
+  const rim=`rgba(255,40,0,${(0.20+0.12*Math.sin(lavaPhase)).toFixed(2)})`;
+  ctx.fillStyle=col; ctx.fillRect(x-5,0,PIPE_W+10,topH);
+  ctx.fillStyle=rim; ctx.fillRect(x-5,0,6,topH); ctx.fillRect(x+PIPE_W-1,0,6,topH);
+  toothEdge(x-5,PIPE_W+10,topH,1,col,x*0.71,17);
+  const fh=10+4*Math.abs(Math.sin(lavaPhase*1.4+x*0.05));
+  ctx.globalAlpha=0.8; flameUp(cx,topH+2,cx+2,topH+14+fh,4,'#ff4400');
+  flameUp(cx,topH+2,cx+1,topH+9+fh*0.6,2,'#ffcc00'); ctx.globalAlpha=1;
+  ctx.strokeStyle=`rgba(255,70,0,${(0.45+0.3*Math.sin(lavaPhase*1.2)).toFixed(2)})`; ctx.lineWidth=1.5;
   ctx.beginPath(); ctx.moveTo(x+16,topH*0.15); ctx.lineTo(x+12,topH*0.58); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x+42,topH*0.30); ctx.lineTo(x+46,topH*0.72); ctx.stroke();
-  // stalactites: [cx, len, width]
-  [[x+PIPE_W/2,46,16],[x+10,33,11],[x+PIPE_W-10,38,12],[x+3,19,6],[x+PIPE_W-4,22,7],[x+30,40,13]]
-    .forEach(([cx,len,w])=>{
-      ctx.fillStyle='#200305'; ctx.fillRect(cx-Math.floor(w/2),topH,w,len-6);
-      ctx.fillStyle='#400808'; ctx.fillRect(cx-Math.floor(w/2),topH,2,len-6);
-      ctx.fillStyle='#200305';
-      ctx.beginPath(); ctx.moveTo(cx-Math.floor(w/2),topH+len-6); ctx.lineTo(cx,topH+len+2); ctx.lineTo(cx+Math.ceil(w/2),topH+len-6); ctx.fill();
-      ctx.strokeStyle=`rgba(255,65,0,${0.45+0.3*Math.sin(lp+cx*0.09)})`; ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(cx+2,topH+4); ctx.lineTo(cx,topH+len-4); ctx.stroke();
-      const ty=topH+len+2;
-      const tg=ctx.createRadialGradient(cx,ty,0,cx,ty,10);
-      tg.addColorStop(0,'rgba(255,55,0,0.65)'); tg.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle=tg; ctx.beginPath(); ctx.arc(cx,ty,10,0,Math.PI*2); ctx.fill();
-      ctx.globalAlpha=0.6+0.35*Math.sin(lp+cx*0.1);
-      ctx.fillStyle='#ff3300'; ctx.fillRect(cx-1,ty-1,2,4); ctx.globalAlpha=1;
-    });
-  // flame tongues on 3 tallest stalactites
-  [[x+PIPE_W/2,topH+48],[x+30,topH+42],[x+PIPE_W-10,topH+40]].forEach(([fx,fy])=>{
-    const fh=12+4*Math.abs(Math.sin(lp*1.4+fx*0.05));
-    ctx.globalAlpha=0.65+0.3*Math.sin(lp+fx*0.04);
-    ctx.fillStyle='#ff4400';
-    ctx.beginPath(); ctx.moveTo(fx,fy); ctx.quadraticCurveTo(fx+4,fy+fh/2,fx,fy+fh); ctx.quadraticCurveTo(fx-4,fy+fh/2,fx,fy); ctx.fill();
-    ctx.fillStyle='#ffcc00';
-    ctx.beginPath(); ctx.moveTo(fx,fy); ctx.quadraticCurveTo(fx+2,fy+fh*.4,fx,fy+fh*.75); ctx.quadraticCurveTo(fx-2,fy+fh*.4,fx,fy); ctx.fill();
-  });
-  ctx.globalAlpha=1;
-
-  // ── BOTTOM: volcanic stalagmites ─────────────────────────────
-  ctx.fillStyle='#110103'; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,botH);
-  ctx.fillStyle=redGlow;
-  ctx.fillRect(x-cO,botY,6,botH); ctx.fillRect(x+PIPE_W+cO-6,botY,6,botH);
-  ctx.strokeStyle=`rgba(255,70,0,${0.45+0.3*Math.sin(lp*1.1+1)})`; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.moveTo(x+20,botY+20); ctx.lineTo(x+15,botY+65); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x+40,botY+32); ctx.lineTo(x+45,botY+80); ctx.stroke();
-  // lava pool surface at cap
-  const lpg=ctx.createLinearGradient(0,botY,0,botY+14);
-  lpg.addColorStop(0,`rgba(255,${55+35*Math.sin(lp*2)},0,0.80)`); lpg.addColorStop(1,'rgba(160,15,0,0)');
-  ctx.fillStyle=lpg; ctx.fillRect(x-cO,botY,PIPE_W+cO*2,14);
-  // stalagmites: [cx, len, width]
-  [[x+PIPE_W/2,44,16],[x+10,31,11],[x+PIPE_W-10,36,12],[x+3,18,6],[x+PIPE_W-4,21,7],[x+30,38,13]]
-    .forEach(([cx,len,w])=>{
-      ctx.fillStyle='#200305';
-      ctx.beginPath(); ctx.moveTo(cx-Math.floor(w/2),botY); ctx.lineTo(cx,botY-len); ctx.lineTo(cx+Math.ceil(w/2),botY); ctx.fill();
-      ctx.fillStyle='#400808'; ctx.fillRect(cx-Math.floor(w/2),botY-len+8,2,len-8);
-      ctx.strokeStyle=`rgba(255,65,0,${0.45+0.3*Math.sin(lp+cx*0.09)})`; ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(cx+2,botY-8); ctx.lineTo(cx,botY-len+6); ctx.stroke();
-      const ty=botY-len;
-      const tg=ctx.createRadialGradient(cx,ty,0,cx,ty,10);
-      tg.addColorStop(0,'rgba(255,55,0,0.65)'); tg.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle=tg; ctx.beginPath(); ctx.arc(cx,ty,10,0,Math.PI*2); ctx.fill();
-      ctx.globalAlpha=0.6+0.35*Math.sin(lp+cx*0.1);
-      ctx.fillStyle='#ff3300'; ctx.fillRect(cx-1,ty-2,2,4); ctx.globalAlpha=1;
-    });
-  // flame jets from tallest stalagmites
-  [[x+PIPE_W/2,botY-44],[x+30,botY-38],[x+PIPE_W-10,botY-36]].forEach(([fx,fy])=>{
-    const fh=12+4*Math.abs(Math.sin(lp*1.4+fx*0.05));
-    ctx.globalAlpha=0.65+0.3*Math.sin(lp*1.2+fx*0.04);
-    ctx.fillStyle='#ff4400';
-    ctx.beginPath(); ctx.moveTo(fx,fy); ctx.quadraticCurveTo(fx+4,fy-fh/2,fx,fy-fh); ctx.quadraticCurveTo(fx-4,fy-fh/2,fx,fy); ctx.fill();
-    ctx.fillStyle='#ffcc00';
-    ctx.beginPath(); ctx.moveTo(fx,fy); ctx.quadraticCurveTo(fx+2,fy-fh*.4,fx,fy-fh*.75); ctx.quadraticCurveTo(fx-2,fy-fh*.4,fx,fy); ctx.fill();
-  });
-  ctx.globalAlpha=1;
+  ctx.fillStyle=col; ctx.fillRect(x-5,botY,PIPE_W+10,botH);
+  ctx.fillStyle=rim; ctx.fillRect(x-5,botY,6,botH); ctx.fillRect(x+PIPE_W-1,botY,6,botH);
+  toothEdge(x-5,PIPE_W+10,botY,-1,col,x*0.43,17);
+  const fh2=10+4*Math.abs(Math.sin(lavaPhase*1.3+x*0.07));
+  ctx.globalAlpha=0.8; flameUp(cx,botY-2,cx-2,botY-14-fh2,4,'#ff4400');
+  flameUp(cx,botY-2,cx-1,botY-9-fh2*0.6,2,'#ffcc00'); ctx.globalAlpha=1;
+  ctx.strokeStyle=`rgba(255,70,0,${(0.45+0.3*Math.sin(lavaPhase*1.1+1)).toFixed(2)})`; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(x+40,botY+24); ctx.lineTo(x+45,botY+64); ctx.stroke();
+  gapGlow(cx,topH-4,'rgba(255,60,10,0.55)','#ffb38a');
+  gapGlow(cx,botY+4,'rgba(255,60,10,0.55)','#ffb38a');
 }
 
-/* ── CHAMPION SPRITES (pixel art, one distinct design each) ──── */
-// All draw around origin facing right, ~±26 x / ±20 y, collision r unchanged.
-// wo = wing flap offset, ph = animation phase
+/* ── CHAMPION SPRITES (smooth vector, one distinct design each) ─
+   All draw around origin facing right; collision radius unchanged.
+   wo = wing flap offset, ph = animation phase */
+function vWing(c,wo,sy){
+  ctx.save(); ctx.translate(-3,-2); ctx.rotate(-0.25+(wo/5)*0.38);
+  ctx.fillStyle=c.wing;
+  ctx.beginPath(); ctx.ellipse(-7,0,11,5*(sy||1),0.12,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=c.whi;
+  ctx.beginPath(); ctx.ellipse(-9,-1.5,6.5,2.4*(sy||1),0.12,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+function vEye(c,ex,ey){
+  ctx.fillStyle='#fff'; circle(ex,ey,4.4);
+  ctx.fillStyle=c.eye; circle(ex+1,ey+0.3,2.3);
+  ctx.fillStyle='#fff'; circle(ex+1.8,ey-0.7,0.9);
+}
+function vBeak(c){
+  ctx.fillStyle=c.beak;
+  ctx.beginPath(); ctx.moveTo(11.5,-3.5);
+  ctx.quadraticCurveTo(21,-2.5,22.5,0);
+  ctx.quadraticCurveTo(21,2.5,11.5,3.8);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.moveTo(13,0.6); ctx.lineTo(21.5,0.4); ctx.lineTo(13,2.8); ctx.closePath(); ctx.fill();
+}
 function drawPhoenix(c,wo,ph){
-  const tw=Math.round(Math.sin(ph*1.7)*2);
-  // Tail — three wavy flame streamers, yellow tips → red roots
-  ctx.fillStyle='#fde047'; ctx.fillRect(-30,-8+tw,8,3);
-  ctx.fillStyle='#fb923c'; ctx.fillRect(-25,-7+tw,11,4);
-  ctx.fillStyle='#fde047'; ctx.fillRect(-32,-1-tw,9,3);
-  ctx.fillStyle='#f97316'; ctx.fillRect(-26,-1,13,4);
-  ctx.fillStyle='#fde047'; ctx.fillRect(-29,5+tw,8,3);
-  ctx.fillStyle='#ea580c'; ctx.fillRect(-24,4+tw,11,4);
-  ctx.fillStyle='#7c2d12'; ctx.fillRect(-15,-3,5,8);
-  // Wing
-  ctx.fillStyle=c.wing; ctx.fillRect(-8,-12+wo,20,8);
-  ctx.fillStyle=c.whi;  ctx.fillRect(-6,-12+wo,16,4);
-  for(let i=0;i<4;i++){ ctx.fillStyle=i%2?'#fde047':c.wing; ctx.fillRect(-6+i*4,-15+wo,4,4); }
-  // Body with glowing belly band
-  ctx.fillStyle=c.body; ctx.fillRect(-10,-8,20,16);
-  ctx.fillStyle=c.hi;   ctx.fillRect(-8,-8,16,4);
-  ctx.fillStyle='#fde047'; ctx.fillRect(-6,2,12,3);
-  ctx.fillStyle=c.dark; ctx.fillRect(-10,6,20,2);
-  // Head
-  ctx.fillStyle=c.body; ctx.fillRect(8,-14,14,14);
-  ctx.fillStyle=c.hi;   ctx.fillRect(8,-14,14,4); ctx.fillRect(8,-10,4,10);
-  // Flame crest — flickering spikes
+  const fl=Math.sin(ph*1.8)*2.5;
+  flameUp(-11,-3,-29,-9+fl,2.8,'#fde047');
+  flameUp(-12,0,-32,1,3.2,'#fb923c');
+  flameUp(-11,3,-28,9-fl,2.8,'#ef4444');
+  ctx.fillStyle=c.body;
+  ctx.beginPath(); ctx.ellipse(-1,0,14,10.5,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=c.hi;
+  ctx.beginPath(); ctx.ellipse(3,3.5,8,4.8,0,0,Math.PI*2); ctx.fill();
+  vWing(c,wo);
   for(let i=0;i<3;i++){
-    const fh=5+Math.round(3*Math.abs(Math.sin(ph*2.3+i*1.4)));
-    ctx.fillStyle=['#fde047','#fb923c','#ef4444'][i];
-    ctx.fillRect(10+i*4,-14-fh,3,fh+3);
+    const fh=9+3.5*Math.abs(Math.sin(ph*2.3+i*1.4));
+    flameUp(1+i*3.6,-8.5,i*4-2,-9-fh,1.9,['#fde047','#fb923c','#ef4444'][i]);
   }
-  // Fierce eye with brow
-  ctx.fillStyle='#ffffff'; ctx.fillRect(16,-10,8,6);
-  ctx.fillStyle='#7c2d12'; ctx.fillRect(19,-10,4,4);
-  ctx.fillStyle='#ffffff'; ctx.fillRect(21,-10,2,2);
-  ctx.fillStyle='#7c2d12'; ctx.fillRect(15,-12,9,2);
-  // Beak
-  ctx.fillStyle='#fbbf24'; ctx.fillRect(22,-8,10,4); ctx.fillRect(22,-4,7,4);
-  ctx.fillStyle='#fde68a'; ctx.fillRect(22,-8,10,2);
+  vEye(c,7,-3.5); vBeak(c);
 }
 function drawRaven(c,wo,ph){
-  // Shadow wisps trailing behind
   const ga=ctx.globalAlpha;
   ctx.globalAlpha=ga*0.35; ctx.fillStyle='#7c3aed';
-  ctx.fillRect(-30,-2+Math.round(Math.sin(ph*1.5)*2),6,2);
-  ctx.fillRect(-34,3-Math.round(Math.sin(ph*1.5)*2),5,2);
+  ctx.beginPath(); ctx.ellipse(-26,-2+Math.sin(ph*1.5)*2,5,1.6,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-31,3-Math.sin(ph*1.5)*2,4,1.3,0,0,Math.PI*2); ctx.fill();
   ctx.globalAlpha=ga;
-  // Long swept tail — stepped points
-  ctx.fillStyle=c.dark; ctx.fillRect(-26,-6,12,3); ctx.fillRect(-31,-8,7,3);
-  ctx.fillStyle=c.tail; ctx.fillRect(-24,-2,14,4); ctx.fillRect(-32,-3,9,3);
-  ctx.fillStyle=c.dark; ctx.fillRect(-25,2,11,3);  ctx.fillRect(-30,4,7,3);
-  // Wing — angular, swept back
-  ctx.fillStyle=c.wing; ctx.fillRect(-8,-12+wo,20,8);
-  ctx.fillStyle=c.whi;  ctx.fillRect(-4,-12+wo,12,3);
-  ctx.fillStyle=c.dark; ctx.fillRect(-13,-10+wo,6,5);
-  for(let i=0;i<3;i++){ ctx.fillStyle=c.wing; ctx.fillRect(-4+i*5,-15+wo,4,4); }
-  // Sleek body
-  ctx.fillStyle=c.body; ctx.fillRect(-10,-8,20,16);
-  ctx.fillStyle=c.hi;   ctx.fillRect(-8,-8,14,3);
-  ctx.fillStyle=c.dark; ctx.fillRect(-10,5,20,3);
-  // Head with dark hood
-  ctx.fillStyle=c.body; ctx.fillRect(8,-14,14,14);
-  ctx.fillStyle=c.dark; ctx.fillRect(8,-14,14,5);
-  ctx.fillStyle=c.hi;   ctx.fillRect(8,-14,14,2);
-  // Slicked-back crest
-  ctx.fillStyle=c.crest; ctx.fillRect(8,-17,6,3); ctx.fillRect(3,-15,6,3);
-  // Glowing violet eye, no sclera
-  ctx.fillStyle='#c4b5fd'; ctx.fillRect(17,-10,5,5);
-  ctx.fillStyle='#7c3aed'; ctx.fillRect(18,-9,3,3);
-  ctx.fillStyle='#ffffff'; ctx.fillRect(18,-9,1,1);
-  // Hooked beak
-  ctx.fillStyle=c.beak; ctx.fillRect(22,-9,9,4); ctx.fillRect(28,-5,3,3);
-  ctx.fillStyle=c.dark; ctx.fillRect(22,-5,6,3);
+  ctx.fillStyle=c.tail;
+  ctx.beginPath(); ctx.moveTo(-9,-4); ctx.quadraticCurveTo(-24,-9,-31,-6);
+  ctx.quadraticCurveTo(-22,-2,-9,1); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=c.dark;
+  ctx.beginPath(); ctx.moveTo(-9,0); ctx.quadraticCurveTo(-24,-1,-29,3);
+  ctx.quadraticCurveTo(-20,5,-9,5); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=c.body;
+  ctx.beginPath(); ctx.ellipse(-1,0,14.5,9.6,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=c.dark;
+  ctx.beginPath(); ctx.ellipse(4,-5.5,9.5,4.8,-0.12,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=c.crest;
+  ctx.beginPath(); ctx.moveTo(6,-9.5); ctx.quadraticCurveTo(-2,-13,-8,-10);
+  ctx.quadraticCurveTo(-2,-9,6,-7.8); ctx.closePath(); ctx.fill();
+  vWing(c,wo);
+  ctx.globalAlpha=ga*0.5; ctx.fillStyle='#a78bfa'; circle(7.5,-3.5,4.6); ctx.globalAlpha=ga;
+  ctx.fillStyle='#c4b5fd'; circle(7.5,-3.5,3);
+  ctx.fillStyle='#3b0764'; circle(8,-3.2,1.5);
+  ctx.fillStyle='#fff'; circle(8.6,-4.1,0.7);
+  ctx.fillStyle=c.beak;
+  ctx.beginPath(); ctx.moveTo(11.5,-4);
+  ctx.quadraticCurveTo(21,-3.5,23,-0.5);
+  ctx.quadraticCurveTo(23.4,1.6,21.5,3.4);
+  ctx.quadraticCurveTo(21.3,0.8,18,1.5);
+  ctx.quadraticCurveTo(15,2.6,11.5,3);
+  ctx.closePath(); ctx.fill();
 }
 function drawHawk(c,wo,ph){
-  // Forked tail
-  ctx.fillStyle=c.tail; ctx.fillRect(-26,-7,14,4); ctx.fillRect(-26,3,14,4);
-  ctx.fillStyle=c.thi;  ctx.fillRect(-30,-8,5,3);  ctx.fillRect(-30,6,5,3);
-  ctx.fillStyle=c.dark; ctx.fillRect(-14,-3,5,6);
-  // Wing — extended point
-  ctx.fillStyle=c.wing; ctx.fillRect(-8,-12+wo,20,8);
-  ctx.fillStyle=c.whi;  ctx.fillRect(-6,-12+wo,16,4);
-  ctx.fillStyle=c.wing; ctx.fillRect(-13,-9+wo,5,4);
-  for(let i=0;i<4;i++){ ctx.fillStyle=i%2?c.whi:c.wing; ctx.fillRect(-6+i*4,-15+wo,4,4); }
-  // Body with pale chest patch
-  ctx.fillStyle=c.body; ctx.fillRect(-10,-8,20,16);
-  ctx.fillStyle=c.hi;   ctx.fillRect(-8,-8,16,4);
-  ctx.fillStyle='#e0f2fe'; ctx.fillRect(2,-2,8,8);
-  ctx.fillStyle=c.dark; ctx.fillRect(-10,6,20,2);
-  // Head
-  ctx.fillStyle=c.body; ctx.fillRect(8,-14,14,14);
-  ctx.fillStyle=c.hi;   ctx.fillRect(8,-14,14,4); ctx.fillRect(8,-10,3,10);
-  // Lightning-bolt crest
+  ctx.fillStyle=c.tail;
+  ctx.beginPath(); ctx.moveTo(-9,-4); ctx.lineTo(-26,-9); ctx.lineTo(-11,1); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-9,4); ctx.lineTo(-26,10); ctx.lineTo(-11,-1); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=c.thi;
+  ctx.beginPath(); ctx.moveTo(-20,-7.2); ctx.lineTo(-26,-9); ctx.lineTo(-21,-5); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-20,8); ctx.lineTo(-26,10); ctx.lineTo(-21,5.6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle=c.body;
+  ctx.beginPath(); ctx.ellipse(-1,0,14,10.2,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#e0f2fe';
+  ctx.beginPath(); ctx.ellipse(4,3.6,7.5,4.6,0,0,Math.PI*2); ctx.fill();
+  vWing(c,wo);
   ctx.fillStyle='#fde047';
-  ctx.fillRect(12,-19,3,3); ctx.fillRect(14,-17,3,3); ctx.fillRect(11,-15,3,2);
-  // Static sparks
-  if(Math.sin(ph*4)>0.4){
-    ctx.fillStyle='#fef9c3';
-    ctx.fillRect(-14,-12+wo,2,2); ctx.fillRect(10,-17+wo,2,2);
+  ctx.beginPath(); ctx.moveTo(1,-9); ctx.lineTo(5,-15); ctx.lineTo(2.6,-14.6);
+  ctx.lineTo(7,-21); ctx.lineTo(5.4,-15.8); ctx.lineTo(8,-16);
+  ctx.lineTo(3,-8.4); ctx.closePath(); ctx.fill();
+  if(Math.sin(ph*4)>0.45){
+    ctx.fillStyle='#fef9c3'; circle(-17,-7+wo,1.4); circle(8,-19,1.2);
   }
-  // Raptor mask band + eye
-  ctx.fillStyle='#075985'; ctx.fillRect(14,-12,10,3);
-  ctx.fillStyle='#ffffff'; ctx.fillRect(16,-10,8,6);
-  ctx.fillStyle=c.eye;     ctx.fillRect(19,-9,4,4);
-  ctx.fillStyle='#ffffff'; ctx.fillRect(21,-9,2,2);
-  // Beak
-  ctx.fillStyle=c.beak; ctx.fillRect(22,-8,10,4); ctx.fillRect(22,-4,8,4);
-  ctx.fillStyle=c.hi;   ctx.fillRect(22,-8,10,2);
+  ctx.fillStyle='#075985';
+  ctx.beginPath(); ctx.ellipse(7,-3.6,7.6,3.4,-0.06,0,Math.PI*2); ctx.fill();
+  vEye(c,7,-3.5); vBeak(c);
 }
 function drawOwl(c,wo,ph){
-  // Stubby tail
-  ctx.fillStyle=c.tail;    ctx.fillRect(-22,-3,12,7);
-  ctx.fillStyle='#6b3410'; ctx.fillRect(-22,-3,12,2);
-  // Rounded wing
-  ctx.fillStyle=c.wing; ctx.fillRect(-8,-11+wo,18,8);
-  ctx.fillStyle=c.whi;  ctx.fillRect(-6,-11+wo,14,3);
-  for(let i=0;i<3;i++){ ctx.fillStyle=i%2?c.whi:c.wing; ctx.fillRect(-4+i*5,-14+wo,4,4); }
-  // Plump body with barred chest
-  ctx.fillStyle=c.body; ctx.fillRect(-10,-8,20,17);
-  ctx.fillStyle=c.hi;   ctx.fillRect(-8,-8,16,3);
-  ctx.fillStyle='#fde68a'; ctx.fillRect(-2,-2,11,10);
-  ctx.fillStyle='#92400e'; ctx.fillRect(-1,0,9,2); ctx.fillRect(-1,4,9,2);
-  ctx.fillStyle=c.dark; ctx.fillRect(-10,7,20,2);
-  // Big round head, face turned to viewer
-  ctx.fillStyle=c.body; ctx.fillRect(4,-16,18,16); ctx.fillRect(2,-14,22,12);
-  ctx.fillStyle=c.hi;   ctx.fillRect(4,-16,18,3);
-  // Ear tufts
-  ctx.fillStyle=c.dark; ctx.fillRect(5,-20,4,5); ctx.fillRect(17,-20,4,5);
-  // Facial discs + wide eyes
-  ctx.fillStyle='#fef3c7'; ctx.fillRect(6,-12,8,8);  ctx.fillRect(15,-12,8,8);
-  ctx.fillStyle='#1a2e05'; ctx.fillRect(8,-10,4,4);  ctx.fillRect(17,-10,4,4);
-  ctx.fillStyle='#ffffff'; ctx.fillRect(9,-9,2,2);   ctx.fillRect(18,-9,2,2);
-  // Tiny hooked beak between the discs
-  ctx.fillStyle=c.beak; ctx.fillRect(13,-6,4,4); ctx.fillRect(14,-2,2,2);
+  ctx.fillStyle=c.tail;
+  ctx.beginPath(); ctx.ellipse(-14,1.5,6.5,4,0.5,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=c.body;
+  ctx.beginPath(); ctx.ellipse(-2,1,12.5,11,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#fde68a';
+  ctx.beginPath(); ctx.ellipse(2,4.5,7,5.2,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#92400e';
+  ctx.fillRect(-3,2.6,10,1.7); ctx.fillRect(-2,6,9,1.7);
+  vWing(c,wo,0.9);
+  ctx.fillStyle=c.body; circle(5,-7,10);
+  ctx.fillStyle=c.dark;
+  ctx.beginPath(); ctx.moveTo(-3.5,-13.5); ctx.lineTo(-6,-20); ctx.lineTo(0.5,-15.5); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(11,-14.5); ctx.lineTo(14.5,-20.5); ctx.lineTo(7.5,-16); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#fef3c7'; circle(0.5,-7.5,5.2); circle(10,-7.5,5.2);
+  ctx.fillStyle='#1a2e05'; circle(1,-7.2,2.6); circle(9.6,-7.2,2.6);
+  ctx.fillStyle='#fff'; circle(1.9,-8.1,1); circle(10.5,-8.1,1);
+  ctx.fillStyle=c.beak;
+  ctx.beginPath(); ctx.moveTo(3.4,-5.4); ctx.lineTo(7.4,-5.4); ctx.lineTo(5.4,-0.8); ctx.closePath(); ctx.fill();
 }
 function drawChampion(i,wo,ph){
   const c=CHARS[i];
@@ -1809,24 +1518,6 @@ function drawDead(){
   ctx.fillText(tips[score%tips.length],LW/2,cy+170);
 }
 
-/* ── LOADING SCREEN ──────────────────────────────────────────── */
-function drawLoading(){
-  ctx.fillStyle='#0a0010'; ctx.fillRect(0,0,LW,LH);
-  const pct = imgsLoaded/imgsTotal;
-  // Bar
-  ctx.fillStyle='rgba(167,139,250,0.2)';
-  ctx.fillRect(LW/2-120,LH/2-8,240,16);
-  ctx.fillStyle='#7c3aed';
-  ctx.fillRect(LW/2-120,LH/2-8,240*pct,16);
-  ctx.strokeStyle='rgba(167,139,250,0.5)'; ctx.lineWidth=1;
-  ctx.strokeRect(LW/2-120,LH/2-8,240,16);
-  ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.font='bold 14px Georgia'; ctx.fillStyle='#c4b5fd';
-  ctx.fillText('Loading realms…  '+Math.round(pct*100)+'%', LW/2, LH/2+26);
-  ctx.font='bold 28px Georgia'; ctx.fillStyle='#fbbf24';
-  ctx.fillText('⚔  THE GAUNTLET  ⚔', LW/2, LH/2-50);
-}
-
 /* ── MAIN LOOP ───────────────────────────────────────────────── */
 function loop(now){
   requestAnimationFrame(loop);
@@ -1838,8 +1529,6 @@ function loop(now){
     ctx.setTransform(scale,0,0,scale,sx*scale,sy*scale);
     shakeAmt=Math.max(0,shakeAmt-0.55);
   }
-
-  if(imgsLoaded < imgsTotal){ drawLoading(); return; }
 
   worldX += state===S.PLAY ? curSpeed : 0.35;
 

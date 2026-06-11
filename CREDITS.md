@@ -1,22 +1,19 @@
 # Credits
 
-## Background Art
+## Artwork
 
-- **Forest biome** (b0_*): "Forest Parallax Background" by MatiasVME — CC0 Public Domain — opengameart.org
-- **Enchanted Forest biome** (b1_*): "Dead Forest Layers" by Admurin — CC-BY 4.0 — admurin.itch.io
-- **Mossy Fortress biome** (b2_*): Gothicvania Church Pack + Gothic Castle + Old Dark Castle by ansimuz — CC0 Public Domain — opengameart.org
-- **Lava Cavern biome** (b3_*): "Cave Parallax Layers" by Admurin — CC-BY 4.0 — admurin.itch.io
-- **Volcanic Hellscape biome** (b4_*): "Volcano Background" by Tio Aimar — CC0 Public Domain — opengameart.org
+All artwork — backgrounds, pillars, champions, UI — is drawn procedurally
+on HTML5 Canvas. No external art assets.
 
-## Music (all CC0)
+## Music (all CC0 / opengameart.org)
 
-- **Menu / Title screen**: "Menu Music" by wipics — CC0 Public Domain — opengameart.org
-- **Game Over**: "Game Over" by Kistol — CC0 Public Domain — opengameart.org
-- **Sunlit Forest**: "Beautiful Forest [Orchestra]" by nene + "Forest Ambience" (ambient layer) — opengameart.org
-- **Dark Forest**: "Dark Forest Theme" by cynicmusic (The Cynic Project) — CC0 Public Domain — opengameart.org
-- **Mossy Fortress**: "Loopable Dungeon Ambience" — opengameart.org
-- **Lava Cavern**: "Heavy Dungeon" — opengameart.org
-- **Volcanic Hellscape**: "The 9th Circle V2" by Joth — CC0 Public Domain — opengameart.org
+- **Menu / Title screen**: "Menu Music" by wipics — CC0 Public Domain
+- **Game Over**: "Game Over" by Kistol — CC0 Public Domain
+- **Sunlit Forest**: "Beautiful Forest [Orchestra]" by nene + "Forest Ambience" (ambient layer)
+- **Dark Forest**: "Dark Forest Theme" by cynicmusic (The Cynic Project) — CC0 Public Domain
+- **Mossy Fortress**: "Loopable Dungeon Ambience"
+- **Lava Cavern**: "Heavy Dungeon"
+- **Volcanic Hellscape**: "The 9th Circle V2" by Joth — CC0 Public Domain
 
 ## Game
 
