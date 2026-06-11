@@ -2,8 +2,9 @@
 
 ## Artwork
 
-All artwork — backgrounds, pillars, champions, UI — is drawn procedurally
-on HTML5 Canvas. No external art assets.
+All artwork — backgrounds, pillars, champions, UI — is original pixel art
+drawn procedurally on HTML5 Canvas (low-res buffer upscaled nearest-neighbor,
+hand-pixeled sprite grids). No external art assets.
 
 ## Music (all CC0 / opengameart.org)
 
